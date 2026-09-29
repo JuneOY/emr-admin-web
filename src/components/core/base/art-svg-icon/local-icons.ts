@@ -1,0 +1,66 @@
+import * as icons from '@element-plus/icons-vue'
+import type { Component } from 'vue'
+
+const aliases: Record<string, keyof typeof icons> = {
+  'home-4-line': 'House',
+  'home-line': 'House',
+  'home-5-line': 'House',
+  'settings-line': 'Setting',
+  'settings-3-line': 'Setting',
+  'menu-2-fill': 'Fold',
+  'menu-line': 'Menu',
+  'search-line': 'Search',
+  'refresh-line': 'Refresh',
+  'sun-fill': 'Sunny',
+  'moon-line': 'Moon',
+  'close-line': 'Close',
+  'close-fill': 'Close',
+  'close-large-fill': 'Close',
+  'arrow-down-2-thin': 'ArrowDown',
+  'check-line': 'Check',
+  'check-fill': 'Check',
+  'arrow-down-s-line': 'ArrowDown',
+  'arrow-right-s-line': 'ArrowRight',
+  'arrow-left-s-line': 'ArrowLeft',
+  'arrow-up-s-line': 'ArrowUp',
+  'arrow-left-line': 'Back',
+  'arrow-right-line': 'Right',
+  'arrow-left-right-fill': 'Switch',
+  'arrow-up-line': 'Top',
+  'more-fill': 'MoreFilled',
+  'more-2-fill': 'MoreFilled',
+  'more-line': 'More',
+  'fullscreen-fill': 'FullScreen',
+  'fullscreen-exit-line': 'FullScreen',
+  'delete-bin-line': 'Delete',
+  'delete-bin-5-line': 'Delete',
+  'edit-line': 'Edit',
+  'add-line': 'Plus',
+  'subtract-line': 'Minus',
+  'download-line': 'Download',
+  'upload-line': 'Upload',
+  'information-line': 'InfoFilled',
+  'error-warning-line': 'Warning',
+  'question-line': 'QuestionFilled',
+  'time-line': 'Clock',
+  'history-line': 'Clock',
+  'file-list-line': 'Document',
+  'folder-line': 'Folder',
+  'filter-line': 'Filter',
+  'eye-line': 'View',
+  'lock-line': 'Lock',
+  'user-line': 'User',
+  'group-line': 'UserFilled',
+  'notification-2-line': 'Bell',
+  'layout-line': 'Grid',
+  'layout-grid-line': 'Grid',
+  'image-line': 'Picture',
+  'arrow-go-back-line': 'RefreshLeft',
+  'arrow-go-forward-line': 'RefreshRight'
+}
+
+// 使用已安装的本地图标组件，不在离线桌面中请求 Iconify 网络接口。
+export function resolveLocalIcon(name: string): Component {
+  const key = name.split(':').pop() || ''
+  return icons[aliases[key] || (key as keyof typeof icons)] || icons.More
+}

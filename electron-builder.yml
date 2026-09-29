@@ -1,0 +1,23 @@
+appId: com.emr.desktop
+productName: 门诊病历
+directories:
+  output: release
+files:
+  - out/**/*
+  - package.json
+asar: true
+npmRebuild: false
+electronDist: node_modules/electron/dist
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  include: build/installer.nsh
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  deleteAppDataOnUninstall: false

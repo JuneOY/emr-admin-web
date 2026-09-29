@@ -1,0 +1,88 @@
+@use '@styles/core/mixin.scss' as *;
+
+// 设置抽屉模态框样式
+.setting-modal {
+  background: transparent !important;
+
+  .el-drawer {
+    background: var(--default-box-color);
+    border-left: 1px solid var(--art-card-border);
+
+    .setting-box-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      width: calc(100% + 15px);
+      margin-bottom: 10px;
+
+      .setting-item {
+        box-sizing: border-box;
+        width: calc(33.333% - 15px);
+        margin-right: 15px;
+        text-align: center;
+
+        .box {
+          position: relative;
+          box-sizing: border-box;
+          display: flex;
+          height: 52px;
+          overflow: hidden;
+          cursor: pointer;
+          border: 2px solid var(--default-border);
+          border-radius: 8px;
+          transition: border-color 0.15s;
+
+          &.mt-16 {
+            margin-top: 16px;
+          }
+
+          &.is-active {
+            border: 2px solid var(--theme-color);
+          }
+
+          img {
+            width: 100%;
+            height: 100%;
+          }
+        }
+
+        .name {
+          margin-top: 6px;
+          font-size: 14px;
+          text-align: center;
+        }
+      }
+    }
+  }
+
+  // 去除滚动条
+  .el-drawer__body::-webkit-scrollbar {
+    width: 0 !important;
+  }
+}
+
+.dark {
+  .setting-modal {
+    .el-drawer {
+      background: var(--default-box-color);
+
+      .setting-item {
+        .box {
+          border: 2px solid transparent;
+        }
+      }
+    }
+  }
+}
+
+// 去除火狐浏览器滚动条
+:deep(.el-drawer__body) {
+  scrollbar-width: none;
+}
+
+// 移动端隐藏
+@media screen and (width <= 800px) {
+  .mobile-hide {
+    display: none !important;
+  }
+}

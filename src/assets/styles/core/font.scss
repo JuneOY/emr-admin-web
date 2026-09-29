@@ -1,0 +1,8 @@
+/* 桌面端使用系统中文字体，启动时不加载远程资源。 */
+body,
+button,
+input,
+select,
+textarea {
+  font-family: 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif;
+}
