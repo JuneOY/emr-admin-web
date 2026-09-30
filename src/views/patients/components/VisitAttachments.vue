@@ -3,6 +3,7 @@
     v-model="visible"
     title="病例附件"
     size="760px"
+    append-to-body
     :close-on-click-modal="false"
     :before-close="beforeClose"
   >

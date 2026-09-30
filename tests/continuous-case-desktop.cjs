@@ -30,6 +30,7 @@ async function continuousCaseWorkflow(
   }
 
   // 连续单据不能提供换医生或初复诊类型切换，复诊基本信息只有姓名。
+  await setInput('input[aria-label="职业"]', '新增复诊前刚修改的职业')
   await click('[data-testid="new-visit"]')
   await wait(`document.querySelectorAll('[data-testid="record-document"]').length === 2`)
   assert.deepEqual(
@@ -69,6 +70,7 @@ async function continuousCaseWorkflow(
   const second = (await visits())[1]
   assert.equal(second.doctorId, dict.data.doctors[0].id)
   assert.equal(second.kind, '复诊')
+  assert.equal(second.patient.occupation, '新增复诊前刚修改的职业')
   assert.equal(second.body.narrative, '同一医生的第一次复诊。')
   assert.equal((await visits())[0].body.mechanism, '初诊补充内容与复诊一起保存。')
   assert.equal((await visits())[0].body.narrative, longText)

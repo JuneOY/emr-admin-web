@@ -143,6 +143,30 @@ async function filesPrescriptionsWorkflow(
     await wait(
       `document.querySelector('[data-testid="attachment-table"]')?.textContent.includes('检查报告测试.pdf')`
     )
+    await evaluate(
+      `document.querySelector('.el-drawer [aria-label="就诊单据"]').closest('.el-select').querySelector('.el-select__wrapper').click()`
+    )
+    await wait(
+      `Array.from(document.querySelectorAll('.el-select-dropdown__item')).some(el => el.textContent.includes('第 1 次复诊') && getComputedStyle(el).visibility === 'visible')`
+    )
+    await evaluate(
+      `Array.from(document.querySelectorAll('.el-select-dropdown__item')).find(el => el.textContent.includes('第 1 次复诊') && getComputedStyle(el).visibility === 'visible').click()`
+    )
+    await wait(
+      `document.querySelector('[data-testid="attachment-table"]')?.textContent.includes('本次就诊暂无附件')`
+    )
+    await evaluate(
+      `document.querySelector('.el-drawer [aria-label="就诊单据"]').closest('.el-select').querySelector('.el-select__wrapper').click()`
+    )
+    await evaluate(
+      `Array.from(document.querySelectorAll('.el-select-dropdown__item')).find(el => el.textContent.includes('第 2 次复诊') && getComputedStyle(el).visibility === 'visible').click()`
+    )
+    await wait(
+      `document.querySelector('[data-testid="attachment-table"]')?.textContent.includes('检查报告测试.pdf')`
+    )
+    await wait(
+      `(() => { const rect = document.querySelector('.el-drawer').getBoundingClientRect(); return rect.left >= 0 && rect.right <= window.innerWidth + 1 && rect.width >= 700 && rect.top >= 0 })()`
+    )
     await rm(sourceImage)
     await rm(sourcePdf)
     await capture(window, 'visit-attachments')

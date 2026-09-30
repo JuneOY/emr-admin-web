@@ -68,7 +68,7 @@
             @click="manageData('restore')"
             >从备份恢复</ElButton
           >
-          <ElButton @click="mittBus.emit('openSetting')">调整界面外观</ElButton>
+          <!-- <ElButton @click="mittBus.emit('openSetting')">调整界面外观</ElButton> -->
         </div>
         <p v-if="lastBackup" class="mt-3 text-sm break-all text-g-600" role="status"
           >最近备份：{{ lastBackup }}</p
@@ -82,7 +82,7 @@
   import { DEFAULT_SETTINGS, parseSettings } from '@shared/desktop'
   import { useDesktopStore } from '@/store/modules/desktop'
   import { desktopService, isDesktop } from '@/services/desktop'
-  import { mittBus } from '@/utils/sys'
+  // import { mittBus } from '@/utils/sys'
   import { ElLoading } from 'element-plus'
   import type { DataOperation } from '@shared/data-management'
   import { saveBeforeRefresh } from '@/services/page-save-guard'

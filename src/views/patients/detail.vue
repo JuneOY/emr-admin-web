@@ -196,9 +196,12 @@
     const request = ++patientRequest
     try {
       const result = await clinicalCall('patient', id)
-      if (request === patientRequest && draft.value?.patientId === id) patient.value = result
+      if (request !== patientRequest || draft.value?.patientId !== id) return false
+      patient.value = result
+      return true
     } catch (error) {
       if (request === patientRequest) notifyError(error)
+      return false
     }
   }
   const prescriptionDialog = ref(false),
@@ -235,6 +238,7 @@
   }
   async function prepareVisit() {
     if (!(await saveRecord())) return
+    if (patient.value && !(await refreshPatient(patient.value.id))) return
     startDraft()
     await scrollToNewRecord()
   }

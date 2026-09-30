@@ -32,34 +32,37 @@ Function EmrBrowseDataDirectory
   ${EndIf}
 FunctionEnd
 
-Function EmrDataPageCreate
-  Call EmrDetectExistingData
-  ; 升级、重装沿用既有配置，在应用内执行完整迁移。
-  ${If} $EmrKeepDataLocation == "1"
-    Abort
-  ${EndIf}
-  ${If} $EmrDataDirectory == ""
-    StrCpy $EmrDataDirectory "$DOCUMENTS\门诊病历数据"
-  ${EndIf}
-  !insertmacro MUI_HEADER_TEXT "选择病例数据存放位置" "选择病例保存位置，然后继续安装。"
-  nsDialogs::Create 1018
-  Pop $EmrDataDialog
-  ${If} $EmrDataDialog == "error"
-    Abort
-  ${EndIf}
-  ${NSD_CreateLabel} 0 0 100% 30u "患者、病例、处方库和检查附件将保存在这里。安装完成后，也可以在本地设置中迁移到其他位置。"
-  Pop $0
-  ${NSD_CreateLabel} 0 42u 100% 12u "病例数据文件夹："
-  Pop $0
-  ${NSD_CreateText} 0 60u 78% 14u "$EmrDataDirectory"
-  Pop $EmrDataInput
-  ${NSD_CreateButton} 80% 60u 20% 14u "浏览…"
-  Pop $0
-  ${NSD_OnClick} $0 EmrBrowseDataDirectory
-  ${NSD_CreateLabel} 0 88u 100% 30u "请选择本机磁盘中的空文件夹。软件升级和卸载会保留病例数据。"
-  Pop $0
-  nsDialogs::Show
-FunctionEnd
+; 此文件早于 MUI2 加载，页面函数须在 builder 的 customHeader 阶段展开。
+!macro customHeader
+  Function EmrDataPageCreate
+    Call EmrDetectExistingData
+    ; 升级、重装沿用既有配置，在应用内执行完整迁移。
+    ${If} $EmrKeepDataLocation == "1"
+      Abort
+    ${EndIf}
+    ${If} $EmrDataDirectory == ""
+      StrCpy $EmrDataDirectory "$DOCUMENTS\门诊病历数据"
+    ${EndIf}
+    !insertmacro MUI_HEADER_TEXT "选择病例数据存放位置" "选择病例保存位置，然后继续安装。"
+    nsDialogs::Create 1018
+    Pop $EmrDataDialog
+    ${If} $EmrDataDialog == "error"
+      Abort
+    ${EndIf}
+    ${NSD_CreateLabel} 0 0 100% 30u "患者、病例、处方库和检查附件将保存在这里。安装完成后，也可以在本地设置中迁移到其他位置。"
+    Pop $0
+    ${NSD_CreateLabel} 0 42u 100% 12u "病例数据文件夹："
+    Pop $0
+    ${NSD_CreateText} 0 60u 78% 14u "$EmrDataDirectory"
+    Pop $EmrDataInput
+    ${NSD_CreateButton} 80% 60u 20% 14u "浏览…"
+    Pop $0
+    ${NSD_OnClick} $0 EmrBrowseDataDirectory
+    ${NSD_CreateLabel} 0 88u 100% 30u "请选择本机磁盘中的空文件夹。软件升级和卸载会保留病例数据。"
+    Pop $0
+    nsDialogs::Show
+  FunctionEnd
+!macroend
 
 Function EmrValidateDataDirectory
   StrCpy $0 $EmrDataDirectory 2 1
