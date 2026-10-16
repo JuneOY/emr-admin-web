@@ -44,6 +44,13 @@ export interface PatientRow extends Patient {
   latestDoctorName: string | null
 }
 
+export interface CaseDelete {
+  patientId: string
+  revision: number
+  updatedAt: string
+  visitCount: number
+}
+
 export interface Page<T> {
   items: T[]
   total: number
@@ -118,6 +125,11 @@ export interface VisitSave {
   categoryIds: string[]
 }
 
+export interface VisitDelete {
+  id: string
+  revision: number
+}
+
 export interface CaseCreate extends Omit<VisitSave, 'id' | 'revision'> {
   patientId: string | null
   doctorId: string
@@ -140,6 +152,8 @@ export interface ClinicalOperations {
   visit: { input: string; output: Visit }
   createVisit: { input: VisitCreate; output: Visit }
   createCase: { input: CaseCreate; output: Visit }
+  deleteCase: { input: CaseDelete; output: { pendingAttachments: boolean } }
+  deleteVisit: { input: VisitDelete; output: { pendingAttachments: boolean } }
   saveVisit: { input: VisitSave; output: Visit }
   prescriptions: { input: PrescriptionQuery; output: Page<Prescription> }
   prescription: { input: string; output: Prescription }
@@ -159,6 +173,8 @@ export const CLINICAL_METHODS: ClinicalMethod[] = [
   'visit',
   'createVisit',
   'createCase',
+  'deleteCase',
+  'deleteVisit',
   'saveVisit',
   'prescriptions',
   'prescription',
@@ -182,6 +198,21 @@ export const EMPTY_RECORD: RecordBody = {
   mechanism: '',
   diagnosis: '',
   prescription: ''
+}
+
+export function previousPrescription(
+  visits: readonly Pick<Visit, 'id' | 'patientId' | 'date' | 'kind' | 'body'>[],
+  index: number
+): string {
+  const current = visits[index]
+  if (!current || current.kind !== '复诊') return ''
+  let previous: (typeof visits)[number] | undefined
+  // 只引用当前单据之前的就诊；同日取后建立者，空处方不回退更早记录。
+  for (const visit of visits.slice(0, index)) {
+    if (!visit.id || visit.patientId !== current.patientId || visit.date > current.date) continue
+    if (!previous || visit.date >= previous.date) previous = visit
+  }
+  return previous?.body.prescription ?? ''
 }
 
 export function localDate(date = new Date()): string {

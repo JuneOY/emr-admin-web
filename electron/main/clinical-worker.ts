@@ -55,7 +55,18 @@ try {
               default:
                 throw new ClinicalError('不支持此内部操作')
             }
-          } else data = repository.execute(message.method, message.input)
+          } else {
+            data = repository.execute(message.method, message.input)
+            if (message.method === 'deleteCase' || message.method === 'deleteVisit') {
+              try {
+                await repository.attachments.cleanup()
+              } catch {
+                // 删除已提交，文件任务持久化保留，不能误报记录删除失败。
+                console.warn('记录已删除，附件文件等待下次启动清理')
+              }
+              data = { pendingAttachments: repository.attachments.hasPendingCleanup() }
+            }
+          }
           parentPort!.postMessage({ id: message.id, success: true, data })
         } catch (error) {
           // 不向页面泄漏 SQL、磁盘路径或病历内容。

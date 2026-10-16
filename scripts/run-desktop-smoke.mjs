@@ -6,6 +6,10 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
+const scope = process.argv[2] || 'full'
+if (!['full', 'case-delete', 'visit-delete'].includes(scope))
+  throw new Error('不支持的桌面测试范围')
+const timeoutMs = scope === 'full' ? 300000 : 180000
 const require = createRequire(import.meta.url)
 const electronDirectory = dirname(require.resolve('electron/package.json'))
 let executable
@@ -39,29 +43,36 @@ await mkdir(artifacts, { recursive: true })
 try {
   const environment = { ...process.env }
   delete environment.ELECTRON_RUN_AS_NODE
-  const child = spawn(executable, [join(root, 'tests/desktop-smoke.cjs'), directory, artifacts], {
-    cwd: root,
-    env: environment,
-    stdio: 'inherit',
-    windowsHide: true
-  })
+  const child = spawn(
+    executable,
+    [join(root, 'tests/desktop-smoke.cjs'), directory, artifacts, scope],
+    {
+      cwd: root,
+      env: environment,
+      stdio: 'inherit',
+      windowsHide: true
+    }
+  )
   let timedOut = false
   const timer = setTimeout(() => {
     timedOut = true
     child.kill()
-  }, 180000)
+  }, timeoutMs)
   try {
     const code = await new Promise((resolveCode, reject) => {
       child.once('error', reject)
       child.once('exit', (code) => resolveCode(code))
     })
-    if (timedOut) throw new Error('桌面冒烟超过 180 秒，请检查日志')
+    if (timedOut) throw new Error(`桌面冒烟超过 ${timeoutMs / 1000} 秒，请检查日志`)
     if (code !== 0) throw new Error(`桌面冒烟未通过，退出码 ${code}`)
     // Electron 提前正常退出也会返回 0，必须收到最后一个断言之后写入的完成标记。
     const result = JSON.parse(await readFile(join(directory, 'desktop-smoke-result.json'), 'utf8'))
-    if (result.status !== 'passed') throw new Error('桌面冒烟没有完成全部断言')
+    if (result.status !== 'passed' || result.scope !== scope)
+      throw new Error('桌面冒烟没有完成指定范围的全部断言')
     console.log(
-      `Electron ${result.electronVersion} 桌面冒烟通过：真实窗口、沙箱隔离、受限 IPC、页面保存、文件持久化、重开、刷新和路由。`
+      scope === 'full'
+        ? `Electron ${result.electronVersion} 桌面冒烟通过：真实窗口、沙箱隔离、受限 IPC、页面保存、文件持久化、重开、刷新和路由。`
+        : `Electron ${result.electronVersion} ${scope === 'visit-delete' ? '单次复诊' : '病例'}删除定向桌面验证通过。`
     )
   } finally {
     clearTimeout(timer)

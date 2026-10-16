@@ -122,6 +122,48 @@ test('备份读取活跃 WAL 数据并包含设置和附件，恢复后病例完
   }
 })
 
+test('旧 v2 备份可校验和恢复，启用时升级并保留全部病例与附件', async (context) => {
+  const f = await fixture(context)
+  f.repository.db.exec('DROP TABLE attachment_cleanup; PRAGMA user_version = 2')
+  await createSnapshot(f.repository.db, f.source, f.snapshot)
+  assert.equal((await verifySnapshot(f.snapshot)).databaseVersion, 2)
+  await restoreSnapshot(f.snapshot, f.target)
+  const restored = new ClinicalRepository(f.target)
+  try {
+    assert.equal(restored.db.prepare('PRAGMA user_version').get()?.user_version, 3)
+    assert.deepEqual(restored.execute('visit', f.visit.id), f.visit)
+    const attachment = restored.attachments.list(f.visit.id)[0]
+    assert.deepEqual((await restored.attachments.read(attachment.id)).bytes, f.imageBytes)
+  } finally {
+    restored.close()
+  }
+})
+
+test('删除后的备份不含已删除病例及附件，恢复清理队列不会触碰原目录', async (context) => {
+  const f = await fixture(context)
+  const patient = f.repository.execute('patient', f.visit.patientId)
+  const attachment = f.repository.attachments.list(f.visit.id)[0]
+  f.repository.execute('deleteCase', {
+    patientId: patient.id,
+    revision: patient.revision,
+    updatedAt: patient.updatedAt,
+    visitCount: 1
+  })
+  await createSnapshot(f.repository.db, f.source, f.snapshot)
+  assert.equal((await verifySnapshot(f.snapshot)).databaseVersion, 3)
+  assert.deepEqual(await readdir(join(f.snapshot, 'attachments')), [])
+  await restoreSnapshot(f.snapshot, f.target)
+  const restored = new ClinicalRepository(f.target)
+  try {
+    assert.throws(() => restored.execute('patient', patient.id), /不存在/)
+    await restored.attachments.cleanup()
+    assert.equal(restored.attachments.hasPendingCleanup(), false)
+    assert.deepEqual(await readFile(join(f.source, 'attachments', attachment.id)), f.imageBytes)
+  } finally {
+    restored.close()
+  }
+})
+
 test('篡改、缺失附件和越界路径的备份被拒绝，不能覆盖原库', async (context) => {
   const f = await fixture(context)
   await createSnapshot(f.repository.db, f.source, f.snapshot)

@@ -21,21 +21,21 @@
         <ElButton
           v-if="patient"
           type="primary"
-          :disabled="loading || saving || records.some((item) => !item.id)"
+          :disabled="loading || saving || !!deleting || records.some((item) => !item.id)"
           data-testid="new-visit"
           @click="prepareVisit"
           >新增复诊</ElButton
         >
         <ElButton
           v-if="draft"
-          :disabled="loading"
+          :disabled="loading || !!deleting"
           data-testid="visit-attachments"
           @click="openAttachments"
           >附件</ElButton
         >
         <ElButton
           v-if="draft"
-          :disabled="loading"
+          :disabled="loading || !!deleting"
           :loading="exporting"
           data-testid="export-record"
           @click="prepareExport"
@@ -76,7 +76,7 @@
           <ElButton
             type="primary"
             :loading="saving"
-            :disabled="loading"
+            :disabled="loading || !!deleting"
             data-testid="save-record"
             @click="saveRecord"
             >保存</ElButton
@@ -87,7 +87,12 @@
         class="min-w-0 divide-y divide-[var(--art-card-border)] rounded-lg border border-[var(--art-card-border)] bg-box"
         data-testid="case-records"
       >
-        <RecordEditor v-for="(record, index) in records" :key="index" v-model="records[index]">
+        <RecordEditor
+          v-for="(record, index) in records"
+          :key="recordKey(record)"
+          v-model="records[index]"
+          :inert="deleting === record"
+        >
           <template #metadata>
             <div class="flex flex-wrap items-center gap-2">
               <ElDatePicker
@@ -117,22 +122,50 @@
                   :value="item.id"
                 />
               </ElSelect>
+              <ElButton
+                v-if="record.kind === '复诊'"
+                type="danger"
+                link
+                :loading="deleting === record"
+                :disabled="loading || saving || !!deleting || exporting"
+                data-testid="delete-followup"
+                @click="deleteFollowup(record)"
+                >删除复诊</ElButton
+              >
             </div>
           </template>
-          <template #prescription-action>
-            <ElButton
-              type="primary"
-              plain
-              size="small"
-              data-testid="pick-prescription"
-              @click="pickPrescription(record)"
-              >引用处方</ElButton
+          <template #prescription-action="{ editor }">
+            <ElDropdown
+              trigger="click"
+              :disabled="loading || saving || !!deleting"
+              @command="(command) => selectPrescription(command, record, editor)"
             >
+              <ElButton type="primary" plain size="small" data-testid="pick-prescription">
+                引用处方<ArrowDown class="ml-1 size-3" />
+              </ElButton>
+              <template #dropdown>
+                <ElDropdownMenu>
+                  <ElDropdownItem
+                    command="previous"
+                    :disabled="!previousPrescription(records, index).trim()"
+                    data-testid="use-previous-prescription"
+                    >上次处方</ElDropdownItem
+                  >
+                  <ElDropdownItem command="library" data-testid="use-library-prescription"
+                    >处方库</ElDropdownItem
+                  >
+                </ElDropdownMenu>
+              </template>
+            </ElDropdown>
           </template>
         </RecordEditor>
       </div>
     </template>
-    <PrescriptionPicker v-model="prescriptionDialog" @apply="applyPrescription" />
+    <PrescriptionPicker
+      v-model="prescriptionDialog"
+      @apply="applyPrescription"
+      @closed="restorePrescriptionFocus"
+    />
     <VisitAttachments
       v-if="savedRecords.length"
       v-model="attachmentsVisible"
@@ -152,9 +185,10 @@
 
 <script setup lang="ts">
   import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
-  import { ArrowLeft } from '@element-plus/icons-vue'
+  import { ArrowDown, ArrowLeft } from '@element-plus/icons-vue'
   import {
     ageAt,
+    previousPrescription,
     EMPTY_PATIENT,
     EMPTY_RECORD,
     localDate,
@@ -165,9 +199,10 @@
   import { isDesktop } from '@/services/desktop'
   import { useClinicalDictionariesStore } from '@/store/modules/clinical-dictionaries'
   import { useRecordDraft } from './use-record-draft'
-  import { appendPrescription, type Prescription } from '@shared/prescriptions'
+  import type { Prescription } from '@shared/prescriptions'
   import type { Attachment } from '@shared/attachments'
   import RecordEditor from './components/RecordEditor.vue'
+  import type RecordPrescriptionEditor from './components/RecordPrescriptionEditor.vue'
   import PrescriptionPicker from './components/PrescriptionPicker.vue'
   import VisitAttachments from './components/VisitAttachments.vue'
   import VisitExportDialog from './components/VisitExportDialog.vue'
@@ -181,9 +216,16 @@
   const { dictionaries } = storeToRefs(dictionaryStore)
   const loading = ref(false),
     exporting = ref(false)
-  const { records, draft, dirty, saving, open, append, save, leave } = useRecordDraft((visit) => {
-    void refreshPatient(visit.patientId)
-  }, syncRoute)
+  const { records, draft, dirty, saving, deleting, open, append, save, remove, leave } =
+    useRecordDraft((visit) => {
+      void refreshPatient(visit.patientId)
+    }, syncRoute)
+  const recordKeys = new WeakMap<Visit, number>()
+  let recordSequence = 0
+  function recordKey(record: Visit) {
+    if (!recordKeys.has(record)) recordKeys.set(record, ++recordSequence)
+    return recordKeys.get(record)!
+  }
   const savedRecords = computed(() => records.value.filter((item) => item.id))
   watchEffect(() => {
     for (const record of records.value)
@@ -207,25 +249,87 @@
   const prescriptionDialog = ref(false),
     attachmentsVisible = ref(false),
     exportDialog = ref(false)
-  const prescriptionTarget = ref<Visit | null>(null)
+  const prescriptionTarget = shallowRef<{
+    record: Visit
+    editor: InstanceType<typeof RecordPrescriptionEditor>
+  } | null>(null)
   const exportVisitId = ref(''),
     exportImages = ref<Attachment[]>([]),
     exportImagesLoading = ref(false)
-  function pickPrescription(record: Visit) {
-    prescriptionTarget.value = record
-    prescriptionDialog.value = true
+  async function deleteFollowup(record: Visit) {
+    const result = await remove(record)
+    if (!result) return
+    if (prescriptionTarget.value?.record === record) {
+      prescriptionDialog.value = false
+      prescriptionTarget.value = null
+    }
+    if (exportVisitId.value === record.id) {
+      exportVisitId.value = savedRecords.value.at(-1)?.id || ''
+      exportImages.value = []
+    }
+    if (result.pendingAttachments)
+      ElMessage.warning('本次复诊已删除，部分附件暂被占用，将在下次启动时继续清理')
+    else ElMessage.success('本次复诊已删除')
+    if (patient.value) void refreshPatient(patient.value.id)
+    try {
+      await syncRoute()
+    } catch (error) {
+      notifyError(error)
+    }
+  }
+  async function selectPrescription(
+    command: string,
+    record: Visit,
+    editor: InstanceType<typeof RecordPrescriptionEditor>
+  ) {
+    if (command === 'library') {
+      prescriptionTarget.value = { record, editor }
+      prescriptionDialog.value = true
+      return
+    }
+    if (command !== 'previous') return
+    const prescription = previousPrescription(records.value, records.value.indexOf(record))
+    if (!prescription.trim()) {
+      ElMessage.info('上次就诊没有处方可引用')
+      return
+    }
+    if (record.body.prescription === prescription) return
+    if (record.body.prescription.trim()) {
+      try {
+        await ElMessageBox.confirm(
+          '使用上次处方替换当前处方内容？其他病历栏目不会改变。',
+          '引用上次处方',
+          {
+            confirmButtonText: '替换处方',
+            cancelButtonText: '保留当前处方',
+            closeOnClickModal: false
+          }
+        )
+      } catch {
+        return
+      }
+    }
+    if (!records.value.includes(record)) return
+    record.body.prescription = prescription
+    if (!record.id) ElMessage.success('已填充上次处方')
+    else if (await save(false)) ElMessage.success('上次处方已填充并保存')
   }
   async function applyPrescription(prescription: Prescription) {
     const target = prescriptionTarget.value
-    if (!target || !records.value.includes(target)) return
+    if (!target || !records.value.includes(target.record)) return
     try {
-      target.body.prescription = appendPrescription(target.body.prescription, prescription)
+      target.editor.insert(prescription)
       prescriptionDialog.value = false
-      if (!target.id) ElMessage.success('处方已引用')
+      if (!target.record.id) ElMessage.success('处方已引用')
       else if (await saveRecord()) ElMessage.success('处方已引用并保存')
     } catch (error) {
       notifyError(error)
     }
+  }
+  function restorePrescriptionFocus() {
+    const target = prescriptionTarget.value
+    prescriptionTarget.value = null
+    if (target && records.value.includes(target.record)) void target.editor.restoreFocus()
   }
   async function scrollToNewRecord() {
     await nextTick()
@@ -272,6 +376,7 @@
   function changeDoctor() {
     if (draft.value) draft.value.doctorName = dictionaryStore.doctorName(draft.value.doctorId, '')
   }
+  let syncingRoute = false
   async function syncRoute() {
     if (!draft.value?.id) return
     const patientId = draft.value.patientId
@@ -279,7 +384,12 @@
     if (String(route.params.id) !== patientId || route.query.visit === 'new') {
       const query = { ...route.query }
       delete query.visit
-      await router.replace({ path: `/patients/${patientId}`, query })
+      syncingRoute = true
+      try {
+        await router.replace({ path: `/patients/${patientId}`, query })
+      } finally {
+        syncingRoute = false
+      }
     }
   }
   async function saveRecord() {
@@ -340,7 +450,7 @@
     }
   }
   onBeforeRouteLeave(leave)
-  onBeforeRouteUpdate(leave)
+  onBeforeRouteUpdate(() => syncingRoute || leave())
   onBeforeUnmount(() => {
     pageRequest++
     patientRequest++

@@ -8,6 +8,9 @@ const { clinicalWorkflow } = require('./clinical-desktop.cjs')
 const { filesPrescriptionsWorkflow } = require('./files-prescriptions-desktop.cjs')
 const { continuousPdfWorkflow } = require('./pdf-desktop.cjs')
 const { dataManagementWorkflow } = require('./data-management-desktop.cjs')
+const { categoryPatientsWorkflow } = require('./category-patients-desktop.cjs')
+const { caseDeleteWorkflow } = require('./case-delete-desktop.cjs')
+const { visitDeleteWorkflow } = require('./visit-delete-desktop.cjs')
 const { DataLocationRepository } = requireTypeScript(
   '../backend/storage/data-location.ts',
   __filename
@@ -16,6 +19,10 @@ const { DataLocationRepository } = requireTypeScript(
 const root = resolve(__dirname, '..')
 const temporaryDirectory = process.argv[2]
 const artifacts = process.argv[3]
+const scope = process.argv[4] || 'full'
+const startedAt = Date.now()
+const stage = (name) =>
+  console.log(`桌面回归 ${Math.round((Date.now() - startedAt) / 1000)} 秒：${name}`)
 assert.ok(temporaryDirectory && artifacts, '测试目录由运行脚本提供')
 app.setPath('userData', join(temporaryDirectory, 'runtime'))
 app.setName('emr-desktop-smoke')
@@ -84,6 +91,7 @@ async function run() {
     entryFile: join(root, 'out/renderer/index.html'),
     preloadFile: join(root, 'out/preload/index.cjs'),
     clinicalWorkerFile: join(root, 'out/main/clinical-worker.js'),
+    iconFile: join(root, 'public/app-icon.png'),
     show: false,
     session: session.fromPartition('emr-smoke')
   }
@@ -115,8 +123,22 @@ async function run() {
     if (document.querySelector('.menu-left-close')) document.querySelector('[aria-label="展开或收起菜单"]').click()
   })()`)
   await waitFor(window, `Boolean(document.querySelector('.menu-left-open'))`)
+  if (scope === 'case-delete' || scope === 'visit-delete') {
+    await evaluate(`(async () => {
+      const doctor = await window.emrDesktop.clinical('saveDictionary', {id:null,revision:0,kind:'doctor',name:'删除测试医生',active:true})
+      if (!doctor.success) throw new Error(doctor.message)
+      const result = await window.emrDesktop.clinical('savePatient', {id:null,revision:0,name:'保留测试患者',phone:'',sex:'未填',birthDate:'',address:'',occupation:'',ethnicity:'',maritalStatus:''})
+      if (!result.success) throw new Error(result.message)
+    })()`)
+    const workflow = scope === 'case-delete' ? caseDeleteWorkflow : visitDeleteWorkflow
+    await workflow(window, { evaluate, waitFor, capture, temporaryDirectory, options })
+    await complete(window)
+    return
+  }
+  stage('病例编辑与 PDF')
   const clinical = await clinicalWorkflow(window, { evaluate, waitFor, capture, artifacts })
   await continuousPdfWorkflow({ evaluate, artifacts, ...clinical })
+  stage('处方库与附件')
   const files = await filesPrescriptionsWorkflow(window, {
     evaluate,
     waitFor,
@@ -125,6 +147,12 @@ async function run() {
     temporaryDirectory,
     ...clinical
   })
+  stage('分类与病例删除')
+  await categoryPatientsWorkflow(window, { evaluate, waitFor, capture, ...clinical })
+  await caseDeleteWorkflow(window, { evaluate, waitFor, capture, temporaryDirectory, options })
+  stage('单次复诊删除')
+  await visitDeleteWorkflow(window, { evaluate, waitFor, capture, temporaryDirectory, options })
+  stage('设置与窗口生命周期')
   await evaluate(`location.hash = '#/workspace'`)
   await waitFor(window, `Boolean(document.querySelector('[data-testid="workspace-page"]'))`)
   await waitFor(window, `document.body.innerText.includes('中文资料库')`)
@@ -153,10 +181,12 @@ async function run() {
   const settings = await evaluate('window.emrDesktop.getSettings()')
   assert.deepEqual(settings, {
     success: true,
-    data: { workspaceName: '门诊病历', confirmBeforeExit: false }
+    data: { workspaceName: '病案收集系统', confirmBeforeExit: false }
   })
   const info = await evaluate('window.emrDesktop.getApplicationInfo()')
   assert.equal(info.success, true)
+  assert.equal(info.data.name, '病案收集系统')
+  assert.match(window.getTitle(), /病案收集系统/)
   assert.equal(info.data.dataDirectory, options.dataDirectory)
   const invalid = await evaluate(
     `window.emrDesktop.saveSettings({ workspaceName: '', confirmBeforeExit: false })`
@@ -228,6 +258,11 @@ async function run() {
   )
   assert.equal(refusedClinical.success, false)
   assert.match(refusedClinical.message, /无权/)
+  const refusedDelete = await foreign.webContents.executeJavaScript(
+    "window.emrDesktop.clinical('deleteCase', {})"
+  )
+  assert.equal(refusedDelete.success, false)
+  assert.match(refusedDelete.message, /无权/)
   const refusedManagement = await foreign.webContents.executeJavaScript(
     "window.emrDesktop.manageLocalData('backup')"
   )
@@ -307,6 +342,7 @@ async function run() {
     ),
     true
   )
+  stage('备份、迁移与恢复')
   const restoredDirectory = await dataManagementWorkflow(window, {
     evaluate,
     waitFor,
@@ -326,11 +362,16 @@ async function run() {
       .narrative,
     clinical.longText
   )
+  await complete(window)
+}
+
+async function complete(window) {
+  stage('全部断言完成')
   assert.deepEqual(errors, [], `页面错误：${errors.join('\n')}`)
   window.destroy()
   await writeFile(
     join(temporaryDirectory, 'desktop-smoke-result.json'),
-    JSON.stringify({ status: 'passed', electronVersion: process.versions.electron })
+    JSON.stringify({ status: 'passed', scope, electronVersion: process.versions.electron })
   )
 }
 

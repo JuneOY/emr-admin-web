@@ -2,6 +2,7 @@ const assert = require('node:assert/strict')
 const { join } = require('node:path')
 const { readFile, writeFile, rm } = require('node:fs/promises')
 const { dialog } = require('electron')
+const { prescriptionInsertionWorkflow } = require('./prescription-insertion-desktop.cjs')
 
 async function filesPrescriptionsWorkflow(
   window,
@@ -27,7 +28,11 @@ async function filesPrescriptionsWorkflow(
   await click('[data-testid="new-prescription"]')
   await wait(`Boolean(document.querySelector('input[data-testid="prescription-name"]'))`)
   await setInput('input[data-testid="prescription-name"]', '处方复用验证')
-  await setInput('input[data-testid="drug-name-0"]', '合成测试药品，无临床用途')
+  await setInput('input[data-testid="drug-name-0"]', '合成测试药品1')
+  for (let index = 1; index < 6; index++) {
+    await button('.el-dialog button', '添加药品')
+    await setInput(`input[data-testid="drug-name-${index}"]`, `合成测试药品${index + 1}`)
+  }
   await setInput('textarea[data-testid="prescription-usage"]', '软件测试内容，请由医生填写实际用法')
   await click('[data-testid="prescription-submit"]')
   await wait(
@@ -57,6 +62,11 @@ async function filesPrescriptionsWorkflow(
     '保留医生原先录入的文字。'
   )
   await click('[data-testid="record-document"]:last-child [data-testid="pick-prescription"]')
+  const prescriptionMenu = `Array.from(document.querySelectorAll('[role="menu"]')).find(el => el.getAttribute('aria-labelledby') === document.querySelector('[data-testid="record-document"]:last-child [data-testid="pick-prescription"]').id)`
+  await wait(`Boolean(${prescriptionMenu}) && ${prescriptionMenu}.getClientRects().length > 0`)
+  await evaluate(
+    `${prescriptionMenu}.querySelector('[data-testid="use-library-prescription"]').click()`
+  )
   await wait(
     `document.querySelector('.el-dialog [data-testid="prescription-table"] .el-table__body')?.textContent.includes('处方复用验证')`
   )
@@ -66,8 +76,33 @@ async function filesPrescriptionsWorkflow(
   )
   await click('[data-testid="prescription-apply"]')
   await wait(
-    `document.querySelector('[data-testid="record-document"]:last-child textarea[data-field="prescription"]')?.value.includes('处方复用验证') && document.querySelector('[data-testid="record-save-state"]')?.textContent === '已保存'`
+    `document.querySelector('[data-testid="record-document"]:last-child textarea[data-field="prescription"]')?.value.includes('合成测试药品6') && document.querySelector('[data-testid="record-save-state"]')?.textContent === '已保存'`
   )
+  const prescriptionSelector =
+    '[data-testid="record-document"]:last-child textarea[data-field="prescription"]'
+  const displayed = await evaluate(
+    `document.querySelector(${JSON.stringify(prescriptionSelector)}).value`
+  )
+  assert.equal(displayed.includes(prescription.name), false)
+  assert.deepEqual(
+    displayed
+      .split('\n')
+      .filter((line) => line.includes('合成测试药品'))
+      .map((line) => line.split('    ').length),
+    [4, 2]
+  )
+  await setInput(
+    prescriptionSelector,
+    displayed.replace('合成测试药品2', '医生修改项2') + '\n医生补充文字'
+  )
+  await click('[data-testid="save-record"]')
+  await wait(
+    `document.querySelector('[data-testid="record-save-state"]')?.textContent === '已保存'`
+  )
+  await evaluate(
+    `document.querySelector(${JSON.stringify(prescriptionSelector)}).scrollIntoView({block:'center'})`
+  )
+  await capture(window, 'prescription-four-items')
   const visits = (
     await evaluate(
       `window.emrDesktop.clinical('visits', {patientId:'${patientId}',page:1,pageSize:20})`
@@ -77,6 +112,20 @@ async function filesPrescriptionsWorkflow(
   const prescriptionCopy = (await evaluate(`window.emrDesktop.clinical('visit', '${visitId}')`))
     .data.body.prescription
   assert.ok(prescriptionCopy.startsWith('保留医生原先录入的文字。\n\n'))
+  assert.ok(prescriptionCopy.includes('医生修改项2'))
+  assert.ok(prescriptionCopy.endsWith('医生补充文字'))
+  await click('[aria-label="刷新页面"]')
+  await wait(
+    `document.querySelector(${JSON.stringify(prescriptionSelector)})?.value.endsWith('医生补充文字')`
+  )
+  await prescriptionInsertionWorkflow(window, {
+    evaluate,
+    waitFor,
+    capture,
+    firstId,
+    otherId: visitId,
+    prescription
+  })
   const { createdAt: _created, updatedAt: _updated, ...savedInput } = prescription
   void [_created, _updated]
   const changed = await evaluate(
@@ -165,7 +214,7 @@ async function filesPrescriptionsWorkflow(
       `document.querySelector('[data-testid="attachment-table"]')?.textContent.includes('检查报告测试.pdf')`
     )
     await wait(
-      `(() => { const rect = document.querySelector('.el-drawer').getBoundingClientRect(); return rect.left >= 0 && rect.right <= window.innerWidth + 1 && rect.width >= 700 && rect.top >= 0 })()`
+      `(() => { const rect = document.querySelector('[data-testid="attachment-import"]').closest('.el-drawer').getBoundingClientRect(); return rect.left >= 0 && rect.right <= window.innerWidth + 1 && rect.width >= 700 && rect.top >= 0 })()`
     )
     await rm(sourceImage)
     await rm(sourcePdf)
@@ -193,9 +242,11 @@ async function filesPrescriptionsWorkflow(
     await button('[data-testid="attachment-table"] .el-table__row:first-child button', '导出原件')
     await wait(`document.body.innerText.includes('附件原件已导出')`)
     assert.deepEqual(await readFile(output), Buffer.from(image, 'base64'))
-    await click('.el-drawer__close-btn')
+    await evaluate(
+      `document.querySelector('[data-testid="attachment-import"]').closest('.el-drawer').querySelector('.el-drawer__close-btn').click()`
+    )
     await wait(
-      `!document.querySelector('.el-drawer') || getComputedStyle(document.querySelector('.el-drawer').parentElement).display === 'none'`
+      `!document.querySelector('[data-testid="attachment-import"]')?.checkVisibility({visibilityProperty:true,opacityProperty:true})`
     )
     await evaluate(`document.getElementById('app-main').scrollTo({top:0})`)
     dialog.showSaveDialog = async () => ({

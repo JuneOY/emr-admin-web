@@ -115,9 +115,20 @@
             class="text-sm font-medium text-g-800"
             >{{ field.label }}</label
           >
-          <slot v-if="field.key === 'prescription'" name="prescription-action" />
+          <slot
+            v-if="field.key === 'prescription'"
+            name="prescription-action"
+            :editor="prescriptionEditors[0]"
+          />
         </div>
+        <RecordPrescriptionEditor
+          v-if="field.key === 'prescription'"
+          ref="prescriptionEditors"
+          :id="`record-${model.id || 'new'}-${field.key}`"
+          v-model="model.body.prescription"
+        />
         <ElInput
+          v-else
           :id="`record-${model.id || 'new'}-${field.key}`"
           v-model="model.body[field.key]"
           type="textarea"
@@ -140,7 +151,9 @@
 
 <script setup lang="ts">
   import { ageAt, ageValue, type Visit } from '@shared/clinical'
+  import RecordPrescriptionEditor from './RecordPrescriptionEditor.vue'
   const model = defineModel<Visit>({ required: true })
+  const prescriptionEditors = ref<InstanceType<typeof RecordPrescriptionEditor>[]>([])
   const detailFields = [
     { key: 'occupation', label: '职业', max: 30 },
     { key: 'ethnicity', label: '民族', max: 20 }

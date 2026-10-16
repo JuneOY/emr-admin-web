@@ -33,6 +33,13 @@
   const matching = computed(() =>
     props.visits.filter((visit) => visit.kind === selected.value?.kind)
   )
+  watch(
+    () => props.visits.map((visit) => visit.id),
+    () => {
+      if (!selected.value) visitId.value = props.visits.at(-1)?.id || ''
+    },
+    { immediate: true }
+  )
   function changeKind(kind: string | number | boolean | undefined) {
     visitId.value = props.visits.findLast((visit) => visit.kind === kind)?.id || ''
   }

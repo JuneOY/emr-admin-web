@@ -41,7 +41,7 @@ FunctionEnd
       Abort
     ${EndIf}
     ${If} $EmrDataDirectory == ""
-      StrCpy $EmrDataDirectory "$DOCUMENTS\门诊病历数据"
+      StrCpy $EmrDataDirectory "$DOCUMENTS\病案收集系统数据"
     ${EndIf}
     !insertmacro MUI_HEADER_TEXT "选择病例数据存放位置" "选择病例保存位置，然后继续安装。"
     nsDialogs::Create 1018
@@ -140,7 +140,7 @@ FunctionEnd
   Call EmrDetectExistingData
   ${If} $EmrKeepDataLocation != "1"
     ${If} $EmrDataDirectory == ""
-      StrCpy $EmrDataDirectory "$DOCUMENTS\门诊病历数据"
+      StrCpy $EmrDataDirectory "$DOCUMENTS\病案收集系统数据"
     ${EndIf}
     Call EmrValidateDataDirectory
     ; UTF-16 保留中文路径；仅首次安装写入，后续目录指针由应用管理。

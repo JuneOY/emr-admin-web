@@ -1,5 +1,5 @@
 appId: com.emr.desktop
-productName: 门诊病历
+productName: 病案收集系统
 directories:
   output: release
 files:
@@ -8,12 +8,18 @@ files:
 asar: true
 npmRebuild: false
 electronDist: node_modules/electron/dist
+extraResources:
+  - from: public/app-icon.png
+    to: app-icon.png
 win:
+  icon: public/favicon.ico
   target:
     - target: nsis
       arch:
         - x64
 nsis:
+  installerIcon: public/favicon.ico
+  uninstallerIcon: public/favicon.ico
   oneClick: false
   perMachine: false
   allowElevation: false

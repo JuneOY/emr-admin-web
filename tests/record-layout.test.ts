@@ -53,6 +53,27 @@ test('A4 连续打印保留固定栏目，转义文本且不允许 HTML 执行',
   assert.match(html, /break-after: avoid/)
 })
 
+test('处方按四列打印，兼容旧单行药品，长文字及独立用法不丢失', () => {
+  const drugs = Array.from({ length: 9 }, (_, index) => `合成项${index + 1}  测试用量  完整说明`)
+  drugs[2] += '<特殊字符>&' + '长说明'.repeat(50)
+  const html = recordHtml({
+    ...visit,
+    body: {
+      ...EMPTY_RECORD,
+      prescription: `处方名\n${drugs.join('\n')}\n用法：原样保留\n第二行\n备注：测试`
+    }
+  })
+  const rows = [...html.matchAll(/<div class="record-prescription-row">(.*?)<\/div>/g)]
+  assert.deepEqual(
+    rows.map((row) => [...row[1].matchAll(/class="record-prescription-item"/g)].length),
+    [4, 4, 1]
+  )
+  for (const drug of drugs) assert.ok(html.includes(escapeHtml(drug)))
+  assert.ok(html.includes('用法：原样保留\n第二行\n备注：测试'))
+  assert.ok(!html.includes('<特殊字符>'))
+  assert.equal((html.match(/医师签字：/g) || []).length, 1)
+})
+
 test('打印保留原病历单的横向资料、无标题病情区及签字，完整输出已填信息', () => {
   const patient = {
     name: '模板测试',

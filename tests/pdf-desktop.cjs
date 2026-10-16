@@ -1,14 +1,47 @@
 const assert = require('node:assert/strict')
 const { join } = require('node:path')
 const { writeFile } = require('node:fs/promises')
+const { BrowserWindow } = require('electron')
 const { require: requireTypeScript } = require('tsx/cjs/api')
 const { renderVisitPdf } = requireTypeScript('../electron/main/pdf.ts', __filename)
 const { EMPTY_PATIENT, EMPTY_RECORD } = requireTypeScript('../shared/clinical.ts', __filename)
+const { recordHtml } = requireTypeScript('../shared/record-layout.ts', __filename)
 
 async function continuousPdfWorkflow({ evaluate, artifacts, firstId, longText }) {
   const result = await evaluate(`window.emrDesktop.clinical('visit', '${firstId}')`)
   assert.equal(result.success, true)
   const specimens = [
+    {
+      name: 'clinical-prescription-four-columns',
+      pages: 1,
+      patient: { ...result.data.patient },
+      body: {
+        ...EMPTY_RECORD,
+        narrative: '合成病例，只用于处方排版验证。',
+        prescription:
+          '四列处方测试\n' +
+          Array.from(
+            { length: 9 },
+            (_, index) =>
+              `合成项${index + 1}  测试量 份` +
+              (index === 2 ? '  长说明自动换行且完整显示，不影响其他药品的排列。' : '')
+          ).join('\n') +
+          '\n用法：整体说明保持独立段落。\n备注：末项 END-FOUR'
+      }
+    },
+    {
+      name: 'clinical-prescription-four-columns-long',
+      pages: 2,
+      patient: { ...result.data.patient },
+      body: {
+        ...EMPTY_RECORD,
+        narrative: '合成病例，只用于四列处方跨页验证。',
+        prescription:
+          '四列长处方测试\n' +
+          Array.from({ length: 80 }, (_, index) => `合成项${index + 1}  测试量`).join('\n') +
+          '\n用法：长处方末尾 END-FOUR-LONG'
+      }
+    },
     {
       name: 'clinical-template-empty',
       pages: 1,
@@ -85,6 +118,38 @@ async function continuousPdfWorkflow({ evaluate, artifacts, firstId, longText })
       }
     }
   ]
+  // 检查真实 Chromium 布局：首行四列，尾行一项，长说明撑高同一行。
+  const layoutWindow = new BrowserWindow({
+    show: false,
+    webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true }
+  })
+  try {
+    await layoutWindow.loadURL(
+      'data:text/html;charset=utf-8,' +
+        encodeURIComponent(recordHtml({ ...result.data, ...specimens[0] }))
+    )
+    const layout = await layoutWindow.webContents
+      .executeJavaScript(`document.fonts.ready.then(() => {
+      const rows = Array.from(document.querySelectorAll('.record-prescription-row'))
+      const first = Array.from(rows[0].children).map(el => el.getBoundingClientRect())
+      return {
+        counts: rows.map(row => row.children.length),
+        sameTop: first.every(rect => Math.abs(rect.top - first[0].top) < 1),
+        separate: first.every((rect, index) => index === 0 || rect.left > first[index - 1].right),
+        contained: Array.from(document.querySelectorAll('.record-prescription-item')).every(el => el.scrollWidth <= el.clientWidth + 1),
+        grows: rows[0].getBoundingClientRect().height > rows[1].getBoundingClientRect().height
+      }
+    })`)
+    assert.deepEqual(layout, {
+      counts: [4, 4, 1],
+      sameTop: true,
+      separate: true,
+      contained: true,
+      grows: true
+    })
+  } finally {
+    layoutWindow.destroy()
+  }
   for (const specimen of specimens) {
     const bytes = await renderVisitPdf({
       ...result.data,

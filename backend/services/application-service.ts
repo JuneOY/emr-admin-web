@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
-import type { ApplicationInfo } from '../../shared/desktop'
+import { APP_NAME, type ApplicationInfo } from '../../shared/desktop'
 import { SettingsRepository } from '../storage/settings-repository'
 
 export class ApplicationService {
@@ -12,7 +12,7 @@ export class ApplicationService {
     const directory = resolve(dataDirectory)
     this.settings = new SettingsRepository(directory)
     this.info = {
-      name: '门诊病历',
+      name: APP_NAME,
       version,
       dataDirectory: directory,
       attachmentsDirectory: join(directory, 'attachments')

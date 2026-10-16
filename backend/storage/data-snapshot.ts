@@ -6,6 +6,7 @@ import { backup, DatabaseSync } from 'node:sqlite'
 import { ClinicalError } from '../../shared/clinical-validation'
 import { SettingsRepository } from './settings-repository'
 import { plainDirectory, writeJsonAtomically } from './data-directories'
+import { CLINICAL_DATABASE_VERSION } from './clinical-database'
 
 const MANIFEST = 'emr-backup.json'
 const validName =
@@ -70,7 +71,7 @@ async function readManifest(directory: string): Promise<SnapshotManifest> {
     !value ||
     value.format !== 'emr-backup' ||
     value.version !== 1 ||
-    value.databaseVersion !== 2 ||
+    ![2, CLINICAL_DATABASE_VERSION].includes(value.databaseVersion) ||
     !Array.isArray(value.files)
   )
     throw new ClinicalError('备份格式或版本不受支持，请选择本软件生成的备份')
@@ -113,6 +114,7 @@ async function validateDatabase(directory: string, manifest: SnapshotManifest): 
       'attachments'
     ])
       db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get()
+    if (manifest.databaseVersion >= 3) db.prepare('SELECT id FROM attachment_cleanup LIMIT 1').get()
     const files = new Map(manifest.files.map((file) => [file.name, file]))
     for (const row of db
       .prepare('SELECT id, size, checksum FROM attachments WHERE removed = 0')
@@ -167,7 +169,7 @@ export async function createSnapshot(
   const manifest: SnapshotManifest = {
     format: 'emr-backup',
     version: 1,
-    databaseVersion: 2,
+    databaseVersion: Number(db.prepare('PRAGMA user_version').get()?.user_version),
     createdAt: new Date().toISOString(),
     files
   }

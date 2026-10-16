@@ -16,6 +16,28 @@ async function continuousCaseWorkflow(
     input.dispatchEvent(new Event('input', {bubbles:true}))
   })()`)
   const field = (id, name) => `[data-record-id="${id}"] textarea[data-field="${name}"]`
+  const prescriptionTrigger = (id) => `[data-record-id="${id}"] [data-testid="pick-prescription"]`
+  const prescriptionMenu = (id) =>
+    `Array.from(document.querySelectorAll('[role="menu"]')).find(el => el.getAttribute('aria-labelledby') === document.querySelector(${JSON.stringify(prescriptionTrigger(id))}).id)`
+  const openPrescriptionMenu = async (id) => {
+    await click(prescriptionTrigger(id))
+    await wait(
+      `document.querySelector(${JSON.stringify(prescriptionTrigger(id))}).getAttribute('aria-expanded') === 'true' && Boolean(${prescriptionMenu(id)})`
+    )
+  }
+  const usePrevious = async (id) => {
+    await openPrescriptionMenu(id)
+    const option = `${prescriptionMenu(id)}.querySelector('[data-testid="use-previous-prescription"]')`
+    assert.equal(await evaluate(`${option}.getAttribute('aria-disabled') === 'true'`), false)
+    await evaluate(`${option}.click()`)
+    await wait(
+      `document.querySelector(${JSON.stringify(prescriptionTrigger(id))}).getAttribute('aria-expanded') === 'false'`
+    )
+  }
+  const confirmButton = (label) =>
+    evaluate(
+      `Array.from(document.querySelectorAll('.el-message-box button')).find(el => el.textContent.trim() === ${JSON.stringify(label)}).click()`
+    )
   const saved = () =>
     wait(`document.querySelector('[data-testid="record-save-state"]')?.textContent === '已保存'`)
   const visits = async () =>
@@ -30,9 +52,35 @@ async function continuousCaseWorkflow(
   }
 
   // 连续单据不能提供换医生或初复诊类型切换，复诊基本信息只有姓名。
+  const initialBody = (await visits())[0].body
+  await openPrescriptionMenu(firstId)
+  const previousOption = `${prescriptionMenu(firstId)}.querySelector('[data-testid="use-previous-prescription"]')`
+  assert.equal(await evaluate(`${previousOption}.getAttribute('aria-disabled')`), 'true')
+  await click(prescriptionTrigger(firstId))
+  await wait(
+    `document.querySelector(${JSON.stringify(prescriptionTrigger(firstId))}).getAttribute('aria-expanded') === 'false'`
+  )
   await setInput('input[aria-label="职业"]', '新增复诊前刚修改的职业')
   await click('[data-testid="new-visit"]')
   await wait(`document.querySelectorAll('[data-testid="record-document"]').length === 2`)
+  for (const name of Object.keys(initialBody)) {
+    assert.equal(
+      await evaluate(`document.querySelector(${JSON.stringify(field('new', name))}).value`),
+      '',
+      `复诊的 ${name} 应为空，不能自动继承初诊`
+    )
+  }
+  await usePrevious('new')
+  assert.equal(
+    await evaluate(`document.querySelector(${JSON.stringify(field('new', 'prescription'))}).value`),
+    initialBody.prescription
+  )
+  for (const name of ['narrative', 'mechanism', 'diagnosis']) {
+    assert.equal(
+      await evaluate(`document.querySelector(${JSON.stringify(field('new', name))}).value`),
+      ''
+    )
+  }
   assert.deepEqual(
     await evaluate(
       `Array.from(document.querySelectorAll('[data-testid="record-document"] h2')).map(el => el.textContent.trim())`
@@ -64,6 +112,30 @@ async function continuousCaseWorkflow(
     '接诊医生：测试医生甲'
   )
   await setInput(field('new', 'narrative'), '同一医生的第一次复诊。')
+  await setInput(field('new', 'prescription'), '本次暂存的处方')
+  await usePrevious('new')
+  await wait(`Boolean(document.querySelector('.el-message-box'))`)
+  await confirmButton('保留当前处方')
+  await wait(`!document.querySelector('.el-message-box')`)
+  assert.equal(
+    await evaluate(`document.querySelector(${JSON.stringify(field('new', 'prescription'))}).value`),
+    '本次暂存的处方'
+  )
+  await usePrevious('new')
+  await wait(`Boolean(document.querySelector('.el-message-box'))`)
+  await confirmButton('替换处方')
+  await wait(`!document.querySelector('.el-message-box')`)
+  assert.equal(
+    await evaluate(`document.querySelector(${JSON.stringify(field('new', 'prescription'))}).value`),
+    initialBody.prescription
+  )
+  assert.equal(
+    await evaluate(`document.querySelector(${JSON.stringify(field('new', 'narrative'))}).value`),
+    '同一医生的第一次复诊。'
+  )
+  await setInput(field('new', 'mechanism'), '第一次复诊调整的病机。')
+  await setInput(field('new', 'diagnosis'), '')
+  await setInput(field('new', 'prescription'), '第一次复诊调整的处方文字。')
   await setInput(field(firstId, 'mechanism'), '初诊补充内容与复诊一起保存。')
   await click('[data-testid="save-record"]')
   await saved()
@@ -72,6 +144,9 @@ async function continuousCaseWorkflow(
   assert.equal(second.kind, '复诊')
   assert.equal(second.patient.occupation, '新增复诊前刚修改的职业')
   assert.equal(second.body.narrative, '同一医生的第一次复诊。')
+  assert.equal(second.body.mechanism, '第一次复诊调整的病机。')
+  assert.equal(second.body.diagnosis, '')
+  assert.equal(second.body.prescription, '第一次复诊调整的处方文字。')
   assert.equal((await visits())[0].body.mechanism, '初诊补充内容与复诊一起保存。')
   assert.equal((await visits())[0].body.narrative, longText)
   await capture(window, 'record-followup')
@@ -147,6 +222,14 @@ async function continuousCaseWorkflow(
     `document.querySelectorAll('[data-testid="record-document"]').length === 3 && document.querySelector('[data-testid="record-save-state"]')?.textContent === '待保存'`
   )
   assert.equal(await evaluate(`location.hash`), '#/patients/' + patientId + '?visit=new')
+  const previousBody = (await visits())[1].body
+  for (const name of Object.keys(previousBody)) {
+    assert.equal(
+      await evaluate(`document.querySelector(${JSON.stringify(field('new', name))}).value`),
+      '',
+      `再次复诊的 ${name} 也应为空`
+    )
+  }
   await click('[data-testid="back-to-patients"]')
   await wait(`Boolean(document.querySelector('[data-testid="patients-page"]'))`)
   assert.equal((await visits()).length, 2)
@@ -154,6 +237,17 @@ async function continuousCaseWorkflow(
   await click('.el-table__body [data-testid="follow-up"]')
   await wait(`Boolean(document.querySelector('[data-record-id="new"]'))`)
   await setInput(field('new', 'narrative'), '从病例列表进入第二次复诊。')
+  await usePrevious('new')
+  assert.equal(
+    await evaluate(`document.querySelector(${JSON.stringify(field('new', 'prescription'))}).value`),
+    previousBody.prescription
+  )
+  assert.equal(
+    await evaluate(`document.querySelector(${JSON.stringify(field('new', 'mechanism'))}).value`),
+    ''
+  )
+  await capture(window, 'record-previous-prescription')
+  await setInput(field('new', 'prescription'), '第二次复诊独立调整的处方')
   await click('[data-testid="save-record"]')
   await saved()
   await wait(`location.hash === '#/patients/${patientId}'`)
@@ -161,6 +255,10 @@ async function continuousCaseWorkflow(
   await wait(`document.querySelectorAll('[data-testid="record-document"]').length === 3`)
   assert.equal((await visits()).length, 3)
   assert.equal((await visits())[2].body.narrative, '从病例列表进入第二次复诊。')
+  assert.equal((await visits())[2].body.prescription, '第二次复诊独立调整的处方')
+  assert.equal((await visits())[2].body.mechanism, '')
+  assert.deepEqual((await visits())[1].body, previousBody)
+  assert.equal((await visits())[0].body.prescription, initialBody.prescription)
   await setInput('input[data-testid="patient-phone"]', '13900000002')
   await click('[data-testid="save-record"]')
   await saved()

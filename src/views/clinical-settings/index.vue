@@ -30,8 +30,16 @@
           }}</span></template
         ></ElTableColumn
       >
-      <ElTableColumn label="操作" width="180" align="right"
+      <ElTableColumn label="操作" :width="kind === 'category' ? 240 : 180" align="right"
         ><template #default="{ row }"
+          ><ElButton
+            v-if="kind === 'category'"
+            link
+            type="primary"
+            :disabled="!isDesktop"
+            data-testid="category-view-patients"
+            @click="showPatients(row)"
+            >查看患者</ElButton
           ><ElButton link type="primary" @click="edit(row)">编辑</ElButton
           ><ElButton link :disabled="saving" @click="toggle(row)">{{
             row.active ? '停用' : '启用'
@@ -60,6 +68,7 @@
         ></ElForm
       >
     </ElDialog>
+    <CategoryPatients v-model="patientsVisible" :category="selectedCategory" />
   </section>
 </template>
 
@@ -68,6 +77,13 @@
   import { clinicalCall, notifyError } from '@/services/clinical'
   import { isDesktop } from '@/services/desktop'
   import { useClinicalDictionariesStore } from '@/store/modules/clinical-dictionaries'
+  import CategoryPatients from './components/CategoryPatients.vue'
+  const patientsVisible = ref(false)
+  const selectedCategory = ref<DictionaryItem | null>(null)
+  function showPatients(category: DictionaryItem) {
+    selectedCategory.value = category
+    patientsVisible.value = true
+  }
   const kind = ref<DictionaryKind>('doctor'),
     dialog = ref(false),
     loading = ref(false),
