@@ -12,6 +12,7 @@ dist-ssr
 # Misc
 .tmp-research
 .agentdocs
+.workbuddy
 out/
 release/
 work/
