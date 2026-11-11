@@ -6,6 +6,8 @@ export default defineConfig({
   main: {
     build: {
       outDir: 'out/main',
+      // xlsx 只用于主进程导出处方库；安装包只打包 out，必须随主进程一起内联。
+      externalizeDeps: { exclude: ['xlsx'] },
       rollupOptions: {
         input: {
           index: resolve(projectRoot, 'electron/main/index.ts'),

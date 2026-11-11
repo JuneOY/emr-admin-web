@@ -2,13 +2,20 @@
   <section aria-label="处方库" data-testid="prescriptions-page">
     <PrescriptionBrowser ref="browser">
       <template #toolbar
-        ><ElButton
-          type="primary"
-          class="ml-auto"
-          :disabled="!isDesktop"
-          data-testid="new-prescription"
-          @click="edit(null)"
-          >新建处方</ElButton
+        ><div class="ml-auto flex items-center gap-3"
+          ><ElButton
+            :disabled="!isDesktop || exporting"
+            :loading="exporting"
+            data-testid="export-prescriptions"
+            @click="exportLibrary"
+            >导出处方库</ElButton
+          ><ElButton
+            type="primary"
+            :disabled="!isDesktop"
+            data-testid="new-prescription"
+            @click="edit(null)"
+            >新建处方</ElButton
+          ></div
         ></template
       >
       <template #actions="{ row }"
@@ -25,16 +32,30 @@
 <script setup lang="ts">
   import type { Prescription } from '@shared/prescriptions'
   import { clinicalCall, notifyError } from '@/services/clinical'
+  import { exportPrescriptions } from '@/services/exports'
   import { isDesktop } from '@/services/desktop'
   import PrescriptionBrowser from './components/PrescriptionBrowser.vue'
   import PrescriptionDialog from './components/PrescriptionDialog.vue'
   const browser = ref<InstanceType<typeof PrescriptionBrowser>>()
   const dialog = ref(false),
     selected = ref<Prescription | null>(null),
-    saving = ref(false)
+    saving = ref(false),
+    exporting = ref(false)
   function edit(row: Prescription | null) {
     selected.value = row
     dialog.value = true
+  }
+  async function exportLibrary() {
+    if (exporting.value) return
+    exporting.value = true
+    try {
+      const result = await exportPrescriptions()
+      if (result) ElMessage.success(`已导出处方 ${result.exported} 张`)
+    } catch (error) {
+      notifyError(error)
+    } finally {
+      exporting.value = false
+    }
   }
   async function toggle(row: Prescription) {
     if (saving.value) return

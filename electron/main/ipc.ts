@@ -12,6 +12,8 @@ import { exportVisitPdf } from './pdf'
 import { parseVisitPdf } from '../../shared/attachments'
 import { importAttachments, exportAttachment } from './attachments'
 import { manageLocalData } from './data-management'
+import { exportPatientCases } from './case-export'
+import { exportPrescriptionLibrary } from './prescription-export'
 
 export function registerDesktopHandlers(
   window: BrowserWindow,
@@ -75,6 +77,37 @@ export function registerDesktopHandlers(
     try {
       const value = parseVisitPdf(input)
       return await exportVisitPdf(window, data.clinical, value, data.application.info.dataDirectory)
+    } finally {
+      exporting = false
+    }
+  })
+  register(DESKTOP_CHANNELS.exportCases, 1, async (input) => {
+    if (exporting) throw new Error('正在导出文件，请等待完成')
+    exporting = true
+    try {
+      return await exportPatientCases(
+        window,
+        data.clinical,
+        input,
+        data.application.info.dataDirectory,
+        (progress) => {
+          if (!window.isDestroyed())
+            window.webContents.send(DESKTOP_CHANNELS.exportProgress, progress)
+        }
+      )
+    } finally {
+      exporting = false
+    }
+  })
+  register(DESKTOP_CHANNELS.exportPrescriptions, 0, async () => {
+    if (exporting) throw new Error('正在导出文件，请等待完成')
+    exporting = true
+    try {
+      return await exportPrescriptionLibrary(
+        window,
+        data.clinical,
+        data.application.info.dataDirectory
+      )
     } finally {
       exporting = false
     }

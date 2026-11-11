@@ -6,6 +6,12 @@ import type {
   AttachmentImportResult,
   VisitPdfInput
 } from './attachments'
+import type {
+  CaseExportInput,
+  CaseExportProgress,
+  CaseExportResult,
+  PrescriptionExportResult
+} from './exports'
 
 export interface LocalSettings {
   workspaceName: string
@@ -28,6 +34,9 @@ export interface DesktopApi {
     input: ClinicalOperations[M]['input']
   ): Promise<DesktopResult<ClinicalOperations[M]['output']>>
   exportVisitPdf(input: VisitPdfInput): Promise<DesktopResult<boolean>>
+  exportCases(input: CaseExportInput): Promise<DesktopResult<CaseExportResult | null>>
+  exportPrescriptions(): Promise<DesktopResult<PrescriptionExportResult | null>>
+  onCaseExportProgress(listener: (progress: CaseExportProgress) => void): () => void
   importAttachments(input: AttachmentImport): Promise<DesktopResult<AttachmentImportResult | null>>
   readAttachment(attachmentId: string): Promise<DesktopResult<AttachmentContent>>
   exportAttachment(attachmentId: string): Promise<DesktopResult<boolean>>
@@ -42,6 +51,9 @@ export const DESKTOP_CHANNELS = {
   manageLocalData: 'emr:data-manage',
   clinical: 'emr:clinical',
   exportVisitPdf: 'emr:visit-pdf',
+  exportCases: 'emr:cases-export',
+  exportPrescriptions: 'emr:prescriptions-export',
+  exportProgress: 'emr:export-progress',
   importAttachments: 'emr:attachments-import',
   readAttachment: 'emr:attachment-read',
   exportAttachment: 'emr:attachment-export',

@@ -33,8 +33,16 @@
           :value="item.id"
           :label="item.name + (item.active ? '' : '（停用）')"
       /></ElSelect>
-      <div class="ml-auto flex gap-3"
+      <div class="ml-auto flex items-center gap-3"
+        ><span v-if="exporting && progressTotal" class="text-sm text-g-600" role="status"
+          >正在导出 {{ progressDone }}/{{ progressTotal }}</span
         ><ElButton @click="router.push('/clinical-settings')">医生与分类</ElButton
+        ><ElButton
+          :disabled="!isDesktop || !selection.length || exporting"
+          :loading="exporting"
+          data-testid="batch-export-cases"
+          @click="exportSelectedCases"
+          >批量导出 PDF{{ selection.length ? `（${selection.length}）` : '' }}</ElButton
         ><ElButton
           type="primary"
           :disabled="!isDesktop"
@@ -54,9 +62,11 @@
       :data="patients"
       row-key="id"
       @row-dblclick="openPatient"
+      @selection-change="selectionChanged"
       empty-text="暂无病例"
       class="w-full"
     >
+      <ElTableColumn v-if="isDesktop" type="selection" width="44" />
       <ElTableColumn prop="recordNumber" label="病案号" width="135" />
       <ElTableColumn prop="name" label="姓名" min-width="120"
         ><template #default="{ row }"
@@ -105,7 +115,9 @@
 <script setup lang="ts">
   import { Search } from '@element-plus/icons-vue'
   import type { Patient, PatientQuery, PatientRow } from '@shared/clinical'
+  import { MAX_BATCH_PATIENTS } from '@shared/exports'
   import { clinicalCall, notifyError } from '@/services/clinical'
+  import { exportCases, onCaseExportProgress } from '@/services/exports'
   import { isDesktop } from '@/services/desktop'
   import { useDesktopStore } from '@/store/modules/desktop'
   import { useClinicalDictionariesStore } from '@/store/modules/clinical-dictionaries'
@@ -122,8 +134,13 @@
   const patients = ref<PatientRow[]>([]),
     total = ref(0),
     loading = ref(false)
+  const selection = ref<PatientRow[]>([]),
+    exporting = ref(false),
+    progressDone = ref(0),
+    progressTotal = ref(0)
   let request = 0,
-    timer: ReturnType<typeof setTimeout> | undefined
+    timer: ReturnType<typeof setTimeout> | undefined,
+    stopProgress: (() => void) | undefined
   async function loadPatients() {
     if (!isDesktop) return
     const current = ++request
@@ -163,9 +180,51 @@
       query: { visit: 'new', ...(query.doctorId ? { doctor: query.doctorId } : {}) }
     })
   }
+  function selectionChanged(rows: PatientRow[]) {
+    selection.value = rows
+  }
+  async function exportSelectedCases() {
+    if (exporting.value || !selection.value.length) return
+    if (selection.value.length > MAX_BATCH_PATIENTS) {
+      ElMessage.warning({
+        message: `每次最多导出 ${MAX_BATCH_PATIENTS} 位患者的病例`,
+        grouping: true
+      })
+      return
+    }
+    exporting.value = true
+    progressDone.value = 0
+    progressTotal.value = 0
+    try {
+      const result = await exportCases({
+        patientIds: selection.value.map((item) => item.id)
+      })
+      if (!result) return
+      const notes = [
+        result.failed ? `${result.failed} 份生成失败` : '',
+        result.withoutImages ? `${result.withoutImages} 份图片超过 100 MB，仅导出文字` : ''
+      ].filter(Boolean)
+      if (notes.length)
+        ElMessage.warning({
+          message: `已导出 ${result.exported} 份病历，${notes.join('，')}`,
+          grouping: true
+        })
+      else ElMessage.success(`已导出 ${result.exported} 份病历`)
+    } catch (error) {
+      notifyError(error)
+    } finally {
+      exporting.value = false
+      progressDone.value = 0
+      progressTotal.value = 0
+    }
+  }
   onMounted(async () => {
     void useDesktopStore().load()
     if (!isDesktop) return
+    stopProgress = onCaseExportProgress((progress) => {
+      progressDone.value = progress.completed
+      progressTotal.value = progress.total
+    })
     try {
       await clinicalCall('dictionaries', null)
       await loadPatients()
@@ -176,6 +235,7 @@
   onBeforeUnmount(() => {
     request++
     clearTimeout(timer)
+    stopProgress?.()
   })
   useEventListener(window, 'focus', () => {
     if (isDesktop) void clinicalCall('dictionaries', null).catch(notifyError)
