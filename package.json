@@ -18,11 +18,13 @@
     "preview:web": "vite preview --host 127.0.0.1",
     "pack:dir": "pnpm build && electron-builder --dir --publish never",
     "pack:win": "pnpm build && electron-builder --win --publish never",
+    "pack:win:zip": "pnpm build && electron-builder --win zip --x64 -c.win.signAndEditExecutable=false --publish never",
     "lint": "eslint src electron backend shared tests scripts build *.ts *.mjs",
     "lint:record-style": "tsx scripts/check-record-style.ts",
     "format": "prettier --check src electron backend shared tests scripts build *.ts *.mjs *.json *.html",
     "test": "tsx --test tests/*.test.ts",
-    "test:desktop": "node scripts/run-desktop-smoke.mjs"
+    "test:desktop": "node scripts/run-desktop-smoke.mjs",
+    "postinstall": "install-electron"
   },
   "config": {
     "commitizen": {

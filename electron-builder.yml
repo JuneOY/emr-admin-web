@@ -7,7 +7,9 @@ files:
   - package.json
 asar: true
 npmRebuild: false
-electronDist: node_modules/electron/dist
+# 走镜像下载 Electron，避免 GitHub Releases 在国内超时（CI 上同样可用）。
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
 win:
   target:
     - target: nsis

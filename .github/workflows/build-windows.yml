@@ -1,0 +1,28 @@
+name: 构建 Windows 安装包
+
+# 在 Windows 上打包，避免 macOS 交叉编译 NSIS 时需要 Rosetta 与 Wine。
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm pack:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 门诊病历-windows-x64
+          path: release/*.exe
+          if-no-files-found: error
