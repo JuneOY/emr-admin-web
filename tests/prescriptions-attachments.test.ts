@@ -8,7 +8,7 @@ import { ClinicalRepository } from '../backend/storage/clinical-repository'
 import { detectAttachment } from '../backend/storage/attachment-repository'
 import { EMPTY_PATIENT, type Visit } from '../shared/clinical'
 import {
-  appendPrescription,
+  insertPrescription,
   parsePrescription,
   prescriptionText,
   type PrescriptionInput
@@ -96,26 +96,31 @@ async function fixture(context: TestContext) {
   }
 }
 
-test('v1 数据迁移到 v2 保留原有患者、就诊快照和版本，重复启动不重置', async (context) => {
+test('v1 数据迁移到当前版本保留原有患者、就诊快照和版本，重复启动不重置', async (context) => {
   const f = await fixture(context)
   // 还原上一个版本的真实表结构，保留已有患者与就诊行。
   const patientBeforeMigration = f.repo.execute('patient', f.patient.id)
-  f.repo.db.exec('DROP TABLE prescriptions; DROP TABLE attachments; PRAGMA user_version = 1')
+  f.repo.db.exec(
+    'DROP TABLE prescriptions; DROP TABLE attachments; DROP TABLE attachment_cleanup; PRAGMA user_version = 1'
+  )
   const repo = f.reopen()
-  assert.equal(repo.db.prepare('PRAGMA user_version').get()?.user_version, 2)
+  assert.equal(repo.db.prepare('PRAGMA user_version').get()?.user_version, 3)
   assert.deepEqual(repo.execute('patient', f.patient.id), patientBeforeMigration)
   assert.deepEqual(repo.execute('visit', f.first.id), f.first)
   const prescription = repo.execute('savePrescription', input)
   assert.deepEqual(f.reopen().execute('prescription', prescription.id), prescription)
 })
 
-test('两类处方可搜索、分页、启停；引用追加独立文字，不受库内修改影响', async (context) => {
+test('两类处方可搜索、分页、启停；按光标引用不含名称，保存重开后独立于处方库', async (context) => {
   const f = await fixture(context)
   const herbal = f.repo.execute('savePrescription', input)
   const western = f.repo.execute('savePrescription', { ...input, kind: '西药／中成药' })
-  const before = '原病历处方\n保留空行\n'
-  const content = appendPrescription(before, herbal)
-  assert.ok(content.startsWith(before + '\n\n'))
+  const before = '前段医生手写\n\n后段医生手写'
+  const position = before.indexOf('后段')
+  const content = insertPrescription(before, herbal, { start: position, end: position }).text
+  assert.ok(content.startsWith('前段医生手写\n\n'))
+  assert.ok(content.endsWith('\n\n后段医生手写'))
+  assert.equal(content.includes(herbal.name), false)
   const visit = f.repo.execute('saveVisit', {
     ...saveInput(f.first),
     body: { ...f.first.body, prescription: content }
@@ -158,8 +163,36 @@ test('处方过期版本、重复名称及非法明细不能覆盖记录；超�
     () => parsePrescription({ ...input, items: [{ ...input.items[0], name: '' }] }),
     /药品名称/
   )
-  assert.throws(() => appendPrescription('字'.repeat(20000), input), /字符/)
+  assert.throws(() => insertPrescription('字'.repeat(20000), input), /字符/)
   assert.ok(prescriptionText(saved).includes(input.items[0].name))
+})
+
+test('四项一行的处方保存并重开后保持独立副本，打印与编辑共用完整内容', async (context) => {
+  const f = await fixture(context)
+  const prescription = f.repo.execute('savePrescription', {
+    ...input,
+    items: Array.from({ length: 6 }, (_, index) => ({
+      ...input.items[0],
+      name: `合成项${index + 1}`
+    }))
+  })
+  const content = insertPrescription('原有说明', prescription).text
+  const saved = f.repo.execute('saveVisit', {
+    ...saveInput(f.first),
+    body: { ...f.first.body, prescription: content }
+  })
+  f.repo.execute('savePrescription', {
+    ...input,
+    id: prescription.id,
+    revision: prescription.revision,
+    name: '已改名'
+  })
+  const restored = f.reopen().execute('visit', saved.id)
+  assert.equal(restored.body.prescription, content)
+  const html = recordHtml(restored)
+  assert.equal(html.includes(prescription.name), false)
+  for (let index = 1; index <= 6; index++) assert.ok(html.includes(`合成项${index}`))
+  assert.equal((html.match(/class="record-prescription-row"/g) || []).length, 2)
 })
 
 test('附件保留原件，按初复诊隔离；重复文件跳过，重开和原文件删除后仍可读', async (context) => {

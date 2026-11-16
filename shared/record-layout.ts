@@ -1,5 +1,6 @@
 import { ageValue, maritalStatusValue, type RecordBody, type Visit } from './clinical'
 import type { Attachment } from './attachments'
+import { prescriptionBlocks, prescriptionItemRows } from './prescription-layout'
 
 export interface RecordImage {
   attachment: Attachment
@@ -198,6 +199,27 @@ body {
   break-after: avoid;
 }
 
+.record-prescription-layout {
+  white-space: normal;
+}
+
+.record-prescription-paragraph {
+  white-space: pre-wrap;
+}
+
+.record-prescription-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 3mm;
+  break-inside: avoid;
+}
+
+.record-prescription-item {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .record-signature {
   margin-top: 8mm;
   text-align: right;
@@ -244,6 +266,23 @@ body {
 }
 `
 
+function prescriptionHtml(value: string): string {
+  const blocks = prescriptionBlocks(value)
+  if (blocks.every((block) => block.kind === 'text')) return escapeHtml(value)
+  return `<div class="record-prescription-layout">${blocks
+    .map((block) =>
+      block.kind === 'text'
+        ? `<div class="record-prescription-paragraph">${escapeHtml(block.text) || '<br>'}</div>`
+        : prescriptionItemRows(block.items)
+            .map(
+              (row) =>
+                `<div class="record-prescription-row">${row.map((item) => `<span class="record-prescription-item">${escapeHtml(item)}</span>`).join('')}</div>`
+            )
+            .join('')
+    )
+    .join('')}</div>`
+}
+
 export function recordHtml(visit: Visit, images: RecordImage[] = []): string {
   const e = escapeHtml,
     p = visit.patient
@@ -272,7 +311,7 @@ export function recordHtml(visit: Visit, images: RecordImage[] = []): string {
       ${(['mechanism', 'diagnosis'] as const).map((key) => `<div class="record-line-section" data-field="${key}"><span class="record-line-label">${FIELD_LABELS[key]}：</span><span class="record-text">${e(visit.body[key])}</span></div>`).join('')}
       <section class="record-prescription" data-field="prescription">
         <h2>处方：</h2>
-        <div class="record-text">${e(visit.body.prescription)}</div>
+        <div class="record-text">${prescriptionHtml(visit.body.prescription)}</div>
         <div class="record-signature">医师签字：<span class="record-signature-value">${e(visit.doctorName)}</span></div>
       </section>
     </div>

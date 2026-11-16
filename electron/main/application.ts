@@ -1,4 +1,5 @@
 import { BrowserWindow, dialog, type Session } from 'electron'
+import { APP_NAME } from '../../shared/desktop'
 import { DataManagementService } from '../../backend/services/data-management-service'
 import { registerDesktopHandlers } from './ipc'
 import { isTrustedPage } from './security'
@@ -11,6 +12,7 @@ export interface DesktopWindowOptions {
   entryFile: string
   preloadFile: string
   clinicalWorkerFile: string
+  iconFile: string
   developmentUrl?: string
   show?: boolean
   session?: Session
@@ -30,7 +32,8 @@ export async function createDesktopWindow(options: DesktopWindowOptions): Promis
     minWidth: 1000,
     minHeight: 700,
     show: false,
-    title: '门诊病历',
+    title: APP_NAME,
+    icon: options.iconFile,
     backgroundColor: '#fafbfc',
     autoHideMenuBar: true,
     webPreferences: {
@@ -78,7 +81,7 @@ export async function createDesktopWindow(options: DesktopWindowOptions): Promis
         ? (
             await dialog.showMessageBox(window, {
               type: 'question',
-              message: '关闭门诊病历？',
+              message: `关闭${APP_NAME}？`,
               buttons: ['继续使用', '关闭软件'],
               defaultId: 0,
               cancelId: 0

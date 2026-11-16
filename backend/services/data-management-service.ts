@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, rm, rmdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { APP_NAME } from '../../shared/desktop'
 import { ApplicationService } from './application-service'
 import { ClinicalClient } from './clinical-client'
 import { DataLocationRepository } from '../storage/data-location'
@@ -78,7 +79,7 @@ export class DataManagementService {
     await plainDirectory(parent)
     const now = new Date()
     const date = `${now.getFullYear()}${[now.getMonth() + 1, now.getDate()].map((value) => String(value).padStart(2, '0')).join('')}-${[now.getHours(), now.getMinutes(), now.getSeconds()].map((value) => String(value).padStart(2, '0')).join('')}`
-    const target = join(parent, `门诊病历备份-${date}-${randomUUID().slice(0, 6)}`)
+    const target = join(parent, `${APP_NAME}备份-${date}-${randomUUID().slice(0, 6)}`)
     await mkdir(target)
     let completed = false
     try {

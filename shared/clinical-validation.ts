@@ -1,5 +1,6 @@
 import type {
   CaseCreate,
+  CaseDelete,
   DictionaryInput,
   PatientDetails,
   PatientInput,
@@ -7,6 +8,7 @@ import type {
   PatientSnapshot,
   RecordBody,
   VisitCreate,
+  VisitDelete,
   VisitQuery,
   VisitSave
 } from './clinical'
@@ -189,6 +191,28 @@ export function parseCaseCreate(input: unknown): CaseCreate {
     patientId: nullableId(value.patientId),
     doctorId: id(value.doctorId),
     ...parseRecordFields(value)
+  }
+}
+
+export function parseCaseDelete(input: unknown): CaseDelete {
+  const value = object(input, ['patientId', 'revision', 'updatedAt', 'visitCount'])
+  const updatedAt = text(value.updatedAt, '病例更新时间', 24, true)
+  const parsed = new Date(updatedAt)
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== updatedAt)
+    invalid('病例更新时间不正确')
+  return {
+    patientId: id(value.patientId),
+    revision: integer(value.revision, '版本', 1, Number.MAX_SAFE_INTEGER),
+    updatedAt,
+    visitCount: integer(value.visitCount, '就诊数量', 0, Number.MAX_SAFE_INTEGER)
+  }
+}
+
+export function parseVisitDelete(input: unknown): VisitDelete {
+  const value = object(input, ['id', 'revision'])
+  return {
+    id: id(value.id),
+    revision: integer(value.revision, '版本', 1, Number.MAX_SAFE_INTEGER)
   }
 }
 

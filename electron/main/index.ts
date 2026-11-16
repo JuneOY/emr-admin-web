@@ -1,10 +1,11 @@
 import { app, BrowserWindow, dialog } from 'electron'
 import { fileURLToPath } from 'node:url'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { createDesktopWindow } from './application'
 import { DataLocationRepository } from '../../backend/storage/data-location'
 
 app.setName('emr-admin')
+if (process.platform === 'win32') app.setAppUserModelId('com.emr.desktop')
 if (!app.requestSingleInstanceLock()) app.quit()
 else {
   const openWindow = async () =>
@@ -16,6 +17,9 @@ else {
       entryFile: fileURLToPath(new URL('../renderer/index.html', import.meta.url)),
       preloadFile: fileURLToPath(new URL('../preload/index.cjs', import.meta.url)),
       clinicalWorkerFile: fileURLToPath(new URL('./clinical-worker.js', import.meta.url)),
+      iconFile: app.isPackaged
+        ? join(process.resourcesPath, 'app-icon.png')
+        : join(app.getAppPath(), 'public/app-icon.png'),
       developmentUrl: app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL
     })
   const showStartupError = (error: unknown) => {

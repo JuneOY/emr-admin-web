@@ -5,6 +5,7 @@
     width="900px"
     destroy-on-close
     :close-on-click-modal="false"
+    @closed="emit('closed')"
   >
     <PrescriptionBrowser v-if="visible" selectable>
       <template #actions="{ row }"
@@ -19,7 +20,7 @@
       >
     </div>
     <template #footer
-      ><span class="mr-4 text-xs text-g-500">追加到本次处方，可继续修改</span
+      ><span class="mr-4 text-xs text-g-500">插入光标位置，选中文字时替换选区</span
       ><ElButton
         :disabled="!selected || loading"
         type="primary"
@@ -36,7 +37,7 @@
   import { clinicalCall, notifyError } from '@/services/clinical'
   import PrescriptionBrowser from '@/views/prescriptions/components/PrescriptionBrowser.vue'
   const visible = defineModel<boolean>({ required: true })
-  const emit = defineEmits<{ apply: [prescription: Prescription] }>()
+  const emit = defineEmits<{ apply: [prescription: Prescription]; closed: [] }>()
   const selected = ref<Prescription | null>(null),
     loading = ref(false)
   let request = 0

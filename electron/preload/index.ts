@@ -11,7 +11,9 @@ const api: DesktopApi = {
   onCaseExportProgress: (listener) => {
     const handler = (_event: IpcRendererEvent, progress: CaseExportProgress) => listener(progress)
     ipcRenderer.on(DESKTOP_CHANNELS.exportProgress, handler)
-    return () => ipcRenderer.removeListener(DESKTOP_CHANNELS.exportProgress, handler)
+    return () => {
+      ipcRenderer.removeListener(DESKTOP_CHANNELS.exportProgress, handler)
+    }
   },
   importAttachments: (input) => ipcRenderer.invoke(DESKTOP_CHANNELS.importAttachments, input),
   readAttachment: (attachmentId) =>

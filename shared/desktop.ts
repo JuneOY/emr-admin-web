@@ -13,6 +13,8 @@ import type {
   PrescriptionExportResult
 } from './exports'
 
+export const APP_NAME = '病案收集系统'
+
 export interface LocalSettings {
   workspaceName: string
   confirmBeforeExit: boolean
@@ -65,7 +67,7 @@ export const DESKTOP_CHANNELS = {
 } as const
 
 export const DEFAULT_SETTINGS: Readonly<LocalSettings> = {
-  workspaceName: '门诊病历',
+  workspaceName: APP_NAME,
   confirmBeforeExit: false
 }
 

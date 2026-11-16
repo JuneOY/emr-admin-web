@@ -38,7 +38,7 @@
           >正在导出 {{ progressDone }}/{{ progressTotal }}</span
         ><ElButton @click="router.push('/clinical-settings')">医生与分类</ElButton
         ><ElButton
-          :disabled="!isDesktop || !selection.length || exporting"
+          :disabled="!isDesktop || !selection.length || exporting || !!deletingId"
           :loading="exporting"
           data-testid="batch-export-cases"
           @click="exportSelectedCases"
@@ -92,11 +92,21 @@
           }}</span>
         </template>
       </ElTableColumn>
-      <ElTableColumn label="操作" width="170" align="right"
+      <ElTableColumn label="操作" width="225" align="right"
         ><template #default="{ row }"
           ><ElButton link type="primary" @click="openPatient(row)">打开病例</ElButton>
           <ElButton link type="primary" data-testid="follow-up" @click="followUp(row)"
             >复诊</ElButton
+          >
+          <ElButton
+            link
+            type="danger"
+            :disabled="Boolean(deletingId) || !isDesktop || exporting"
+            :loading="deletingId === row.id"
+            data-testid="delete-case"
+            @click.stop="deleteCase(row)"
+            @dblclick.stop
+            >删除</ElButton
           ></template
         ></ElTableColumn
       >
@@ -133,7 +143,8 @@
   })
   const patients = ref<PatientRow[]>([]),
     total = ref(0),
-    loading = ref(false)
+    loading = ref(false),
+    deletingId = ref('')
   const selection = ref<PatientRow[]>([]),
     exporting = ref(false),
     progressDone = ref(0),
@@ -151,6 +162,12 @@
         categoryId: query.categoryId || ''
       })
       if (current !== request) return
+      const lastPage = Math.max(1, Math.ceil(result.total / query.pageSize))
+      if (query.page > lastPage) {
+        query.page = lastPage
+        await loadPatients()
+        return
+      }
       patients.value = result.items
       total.value = result.total
     } catch (error) {
@@ -169,12 +186,14 @@
     timer = setTimeout(filterChanged, 250)
   }
   function openPatient(patient: Patient) {
+    if (deletingId.value) return
     void router.push({
       path: `/patients/${patient.id}`,
       query: query.doctorId ? { doctor: query.doctorId } : {}
     })
   }
   function followUp(patient: Patient) {
+    if (deletingId.value) return
     void router.push({
       path: `/patients/${patient.id}`,
       query: { visit: 'new', ...(query.doctorId ? { doctor: query.doctorId } : {}) }
@@ -184,7 +203,7 @@
     selection.value = rows
   }
   async function exportSelectedCases() {
-    if (exporting.value || !selection.value.length) return
+    if (exporting.value || deletingId.value || !selection.value.length) return
     if (selection.value.length > MAX_BATCH_PATIENTS) {
       ElMessage.warning({
         message: `每次最多导出 ${MAX_BATCH_PATIENTS} 位患者的病例`,
@@ -216,6 +235,42 @@
       exporting.value = false
       progressDone.value = 0
       progressTotal.value = 0
+    }
+  }
+  async function deleteCase(patient: PatientRow) {
+    if (deletingId.value || exporting.value || !isDesktop) return
+    deletingId.value = patient.id
+    try {
+      try {
+        await ElMessageBox.confirm(
+          `确认删除“${patient.name}”（${patient.recordNumber}）的整份病例？将删除患者资料、全部 ${patient.visitCount} 次就诊及关联附件，删除后无法直接撤销。`,
+          '删除病例',
+          {
+            confirmButtonText: '删除整份病例',
+            cancelButtonText: '取消',
+            confirmButtonClass: 'el-button--danger',
+            closeOnClickModal: false
+          }
+        )
+      } catch {
+        return
+      }
+      try {
+        const result = await clinicalCall('deleteCase', {
+          patientId: patient.id,
+          revision: patient.revision,
+          updatedAt: patient.updatedAt,
+          visitCount: patient.visitCount
+        })
+        if (result.pendingAttachments)
+          ElMessage.warning('病例已删除，剩余附件文件将在下次启动时继续清理')
+        else ElMessage.success('病例已删除')
+      } catch (error) {
+        notifyError(error)
+      }
+      await loadPatients()
+    } finally {
+      deletingId.value = ''
     }
   }
   onMounted(async () => {

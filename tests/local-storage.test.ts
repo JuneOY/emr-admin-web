@@ -17,6 +17,7 @@ async function createService(context: TestContext) {
   })
   const service = new ApplicationService(join(directory, '中文资料库'), '0.1.0')
   await service.initialize()
+  assert.equal(service.info.name, '病案收集系统')
   return service
 }
 

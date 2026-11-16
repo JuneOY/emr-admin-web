@@ -336,6 +336,76 @@ test('医生和分类筛选匹配同一患者的就诊，支持电话检索和�
   )
 })
 
+test('分类患者按任一次就诊归属去重，停用后保留历史并支持搜索、分页和重开', async (context) => {
+  const f = await fixture(context),
+    repo = f.repo
+  const dictionary = { id: null, revision: 0, active: true }
+  const doctor = repo.execute('saveDictionary', { ...dictionary, kind: 'doctor', name: '分类医生' })
+  const category = repo.execute('saveDictionary', {
+    ...dictionary,
+    kind: 'category',
+    name: '分类甲'
+  })
+  const other = repo.execute('saveDictionary', { ...dictionary, kind: 'category', name: '分类乙' })
+  const input: CaseCreate = {
+    patientId: null,
+    doctorId: doctor.id,
+    date: '2026-10-01',
+    kind: '初诊',
+    patient: { ...EMPTY_PATIENT, name: '历史分类患者', phone: '13900000999', age: '' },
+    body: { ...EMPTY_RECORD },
+    categoryIds: [category.id]
+  }
+  const first = repo.execute('createCase', input)
+  repo.execute('createCase', {
+    ...input,
+    patientId: first.patientId,
+    kind: '复诊',
+    date: '2026-10-02'
+  })
+  repo.execute('createCase', {
+    ...input,
+    patientId: first.patientId,
+    kind: '复诊',
+    date: '2026-10-03',
+    categoryIds: [other.id]
+  })
+  for (let index = 0; index < 22; index++) {
+    repo.execute('createCase', {
+      ...input,
+      patient: {
+        ...input.patient,
+        name: `分类患者${index}`,
+        phone: `13900000${String(index).padStart(3, '0')}`
+      }
+    })
+  }
+  repo.execute('createCase', {
+    ...input,
+    patient: { ...input.patient, name: '没有该分类的患者', phone: '' },
+    categoryIds: [other.id]
+  })
+  const query = { keyword: '', doctorId: '', categoryId: category.id, page: 1, pageSize: 20 }
+  const page1 = repo.execute('patients', query),
+    page2 = repo.execute('patients', { ...query, page: 2 })
+  assert.equal(page1.total, 23)
+  assert.equal(page1.items.length, 20)
+  assert.equal(page2.items.length, 3)
+  assert.equal(new Set([...page1.items, ...page2.items].map((item) => item.id)).size, 23)
+  const historical = repo.execute('patients', { ...query, keyword: '13900000999' })
+  assert.equal(historical.total, 1)
+  assert.equal(historical.items[0].id, first.patientId)
+  assert.equal(historical.items[0].visitCount, 3)
+  assert.equal(historical.items[0].latestVisitDate, '2026-10-03')
+  assert.equal(repo.execute('patients', { ...query, keyword: '历史分类' }).total, 1)
+  assert.equal(repo.execute('patients', { ...query, keyword: '未匹配' }).total, 0)
+  repo.execute('saveDictionary', { ...category, kind: 'category', active: false })
+  repo.execute('saveDictionary', { ...doctor, kind: 'doctor', name: '最新分类医生', active: false })
+  const reopened = f.reopen().execute('patients', query)
+  assert.equal(reopened.total, 23)
+  assert.ok(reopened.items.every((item) => item.latestDoctorName === '最新分类医生'))
+})
+
 test('重复患者、过期版本及非法分类不会覆盖已有记录', async (context) => {
   const { repo } = await fixture(context)
   const patient = repo.execute('savePatient', patientInput)

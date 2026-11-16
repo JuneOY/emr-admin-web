@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import type { Visit, VisitSave } from '@shared/clinical'
+import type { ClinicalOperations, Visit, VisitSave } from '@shared/clinical'
 import { clinicalCall, notifyError } from '@/services/clinical'
 import { registerPageSaveGuard } from '@/services/page-save-guard'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -36,12 +36,14 @@ export function useRecordDraft(
 ) {
   const records = ref<Visit[]>([]),
     saving = ref(false)
+  const deleting = ref<Visit | null>(null)
   const draft = computed(() => records.value.at(-1) || null)
   const savedContent = ref(new Map<string, string>())
   const changed = (visit: Visit) => content(visit) !== savedContent.value.get(visit.id)
   const dirty = computed(() => records.value.some(changed))
   let timer: ReturnType<typeof setTimeout> | undefined
   let pending: Promise<boolean> | null = null
+  let removal: Promise<ClinicalOperations['deleteVisit']['output'] | null> | null = null
   let leaving: Promise<boolean> | null = null
   let includeNew = false
 
@@ -58,10 +60,17 @@ export function useRecordDraft(
   }
 
   async function save(saveNew = true): Promise<boolean> {
+    if (removal) {
+      await removal
+      return save(saveNew)
+    }
     clearTimeout(timer)
     includeNew ||= saveNew
     if (pending) return pending
-    const next = () => records.value.find((visit) => (visit.id ? changed(visit) : includeNew))
+    const next = () =>
+      deleting.value
+        ? undefined
+        : records.value.find((visit) => (visit.id ? changed(visit) : includeNew))
     if (!next()) {
       includeNew = false
       return true
@@ -115,18 +124,60 @@ export function useRecordDraft(
     return pending
   }
 
-  watch(
-    () => records.value.map(content),
-    () => {
-      clearTimeout(timer)
-      if (records.value.some((visit) => visit.id && changed(visit)))
-        timer = setTimeout(() => {
-          void save(false)
-        }, 900)
-    }
-  )
+  function scheduleSave() {
+    clearTimeout(timer)
+    if (!deleting.value && records.value.some((visit) => visit.id && changed(visit)))
+      timer = setTimeout(() => {
+        void save(false)
+      }, 900)
+  }
+
+  function remove(visit: Visit) {
+    if (removal || visit.kind !== '复诊' || !records.value.includes(visit))
+      return Promise.resolve(null)
+    deleting.value = visit
+    clearTimeout(timer)
+    removal = Promise.resolve()
+      .then(async () => {
+        // 在途保存回填最新版本后再确认；确认期间不发起新保存，也不重载其他单据。
+        if (pending) await pending
+        try {
+          await ElMessageBox.confirm(
+            `删除“${visit.patient.name}”于 ${visit.date} 的这次复诊${visit.id ? '记录及其附件' : '草稿'}？初诊和其他复诊保留，删除后无法撤销。`,
+            '删除复诊',
+            {
+              confirmButtonText: '删除本次复诊',
+              cancelButtonText: '取消',
+              confirmButtonClass: 'el-button--danger',
+              closeOnClickModal: false
+            }
+          )
+        } catch {
+          return null
+        }
+        const result = visit.id
+          ? await clinicalCall('deleteVisit', { id: visit.id, revision: visit.revision })
+          : { pendingAttachments: false }
+        records.value.splice(records.value.indexOf(visit), 1)
+        savedContent.value.delete(visit.id)
+        return result
+      })
+      .catch((error) => {
+        notifyError(error)
+        return null
+      })
+      .finally(() => {
+        removal = null
+        deleting.value = null
+        scheduleSave()
+      })
+    return removal
+  }
+
+  watch(() => records.value.map(content), scheduleSave)
 
   async function leave(): Promise<boolean> {
+    if (removal) await removal
     if (leaving) return leaving
     if (!dirty.value && !saving.value) return true
     leaving = (async () => {
@@ -158,7 +209,7 @@ export function useRecordDraft(
     }
   })
   const beforeUnload = (event: BeforeUnloadEvent) => {
-    if (!dirty.value && !saving.value) return
+    if (!dirty.value && !saving.value && !removal) return
     event.preventDefault()
     event.returnValue = ''
     ElMessage.warning({
@@ -177,5 +228,5 @@ export function useRecordDraft(
     disposeGuard()
     window.removeEventListener('beforeunload', beforeUnload)
   })
-  return { records, draft, dirty, saving, changed, open, append, save, leave }
+  return { records, draft, dirty, saving, deleting, changed, open, append, save, remove, leave }
 }

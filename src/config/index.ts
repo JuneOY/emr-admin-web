@@ -29,13 +29,14 @@
 
 import { MenuThemeEnum, MenuTypeEnum, SystemThemeEnum } from '@/enums/appEnum'
 import { SystemConfig } from '@/types/config'
+import { APP_NAME } from '@shared/desktop'
 import { configImages } from './assets/images'
 import { headerBarConfig } from './modules/headerBar'
 
 const appConfig: SystemConfig = {
   // 系统信息
   systemInfo: {
-    name: '门诊病历' // 系统名称
+    name: APP_NAME // 系统名称
   },
   // 系统主题
   systemThemeStyles: {

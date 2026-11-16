@@ -25,10 +25,12 @@ import {
   ClinicalError,
   id,
   parseCaseCreate,
+  parseCaseDelete,
   parseDictionary,
   parsePatient,
   parsePatientQuery,
   parseVisitCreate,
+  parseVisitDelete,
   parseVisitQuery,
   parseVisitSave
 } from '../../shared/clinical-validation'
@@ -64,6 +66,8 @@ export class ClinicalRepository {
       visit: () => this.visit(id(input)),
       createVisit: () => this.createVisit(input),
       createCase: () => this.createCase(input),
+      deleteCase: () => this.deleteCase(input),
+      deleteVisit: () => this.deleteVisit(input),
       saveVisit: () => this.saveVisit(input),
       prescriptions: () => this.prescriptions.list(input),
       prescription: () => this.prescriptions.get(input),
@@ -339,6 +343,64 @@ export class ClinicalRepository {
         body: value.body,
         categoryIds: value.categoryIds
       })
+    })
+  }
+
+  private deleteCase(input: unknown): ClinicalOperations['deleteCase']['output'] {
+    const value = parseCaseDelete(input)
+    return this.transaction(() => {
+      const patient = this.patient(value.patientId)
+      const visitCount = Number(
+        this.db.prepare('SELECT COUNT(*) AS n FROM visits WHERE patient_id = ?').get(patient.id)?.n
+      )
+      if (
+        patient.revision !== value.revision ||
+        patient.updatedAt !== value.updatedAt ||
+        visitCount !== value.visitCount
+      )
+        throw new ClinicalError('病例已更新，请重新核实列表中的病例后再删除')
+      // 删除记录与登记文件清理任务在同一事务提交，中断后也能继续清理附件。
+      const queued = this.db
+        .prepare(
+          `INSERT OR IGNORE INTO attachment_cleanup(id)
+           SELECT a.id FROM attachments a JOIN visits v ON v.id = a.visit_id WHERE v.patient_id = ?`
+        )
+        .run(patient.id)
+      this.db
+        .prepare(
+          'DELETE FROM attachments WHERE visit_id IN (SELECT id FROM visits WHERE patient_id = ?)'
+        )
+        .run(patient.id)
+      this.db
+        .prepare(
+          'DELETE FROM visit_categories WHERE visit_id IN (SELECT id FROM visits WHERE patient_id = ?)'
+        )
+        .run(patient.id)
+      this.db.prepare('DELETE FROM visits WHERE patient_id = ?').run(patient.id)
+      this.db.prepare('DELETE FROM patients WHERE id = ?').run(patient.id)
+      return { pendingAttachments: queued.changes > 0 }
+    })
+  }
+
+  private deleteVisit(input: unknown): ClinicalOperations['deleteVisit']['output'] {
+    const value = parseVisitDelete(input)
+    return this.transaction(() => {
+      const visit = this.visit(value.id)
+      if (visit.kind !== '复诊')
+        throw new ClinicalError('初诊不能单独删除，请在病例列表管理整份病例')
+      if (visit.revision !== value.revision) throw conflict()
+      const queued = this.db
+        .prepare(
+          'INSERT OR IGNORE INTO attachment_cleanup(id) SELECT id FROM attachments WHERE visit_id = ?'
+        )
+        .run(visit.id)
+      this.db.prepare('DELETE FROM attachments WHERE visit_id = ?').run(visit.id)
+      this.db.prepare('DELETE FROM visit_categories WHERE visit_id = ?').run(visit.id)
+      this.db.prepare('DELETE FROM visits WHERE id = ?').run(visit.id)
+      this.db
+        .prepare('UPDATE patients SET updated_at = ? WHERE id = ?')
+        .run(new Date().toISOString(), visit.patientId)
+      return { pendingAttachments: queued.changes > 0 }
     })
   }
 

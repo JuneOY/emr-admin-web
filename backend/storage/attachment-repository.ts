@@ -216,15 +216,32 @@ export class AttachmentRepository {
   }
   async cleanup(): Promise<void> {
     await this.prepareDirectory()
-    // 元数据先标记移除，中断或文件占用时下次启动继续清理，不重新展示已移除附件。
-    for (const row of this.db.prepare('SELECT id FROM attachments WHERE removed = 1').all()) {
+    // 单附件移除和整份病例删除共用清理流程；占用或中断后保留任务，下次启动继续。
+    const rows = this.db
+      .prepare(
+        `SELECT id FROM attachments WHERE removed = 1
+       UNION SELECT id FROM attachment_cleanup c
+       WHERE NOT EXISTS (SELECT 1 FROM attachments a WHERE a.id = c.id AND a.removed = 0)`
+      )
+      .all()
+    for (const row of rows) {
       const key = id(row.id)
       try {
         await rm(this.path(key), { force: true })
         this.db.prepare('DELETE FROM attachments WHERE id = ? AND removed = 1').run(key)
+        this.db.prepare('DELETE FROM attachment_cleanup WHERE id = ?').run(key)
       } catch {
         /* 文件占用时保留清理标记。 */
       }
     }
+  }
+  hasPendingCleanup(): boolean {
+    return Boolean(
+      this.db
+        .prepare(
+          'SELECT id FROM attachment_cleanup UNION SELECT id FROM attachments WHERE removed = 1 LIMIT 1'
+        )
+        .get()
+    )
   }
 }

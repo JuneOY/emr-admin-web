@@ -1,4 +1,11 @@
 import { ClinicalError, id, integer, object, text } from './clinical-validation'
+import {
+  formatPrescriptionEdit,
+  prescriptionItemRows,
+  prescriptionRuns,
+  PRESCRIPTION_ITEM_GAP,
+  type PrescriptionSelection
+} from './prescription-layout'
 
 export const PRESCRIPTION_KINDS = ['中药饮片', '西药／中成药'] as const
 export type PrescriptionKind = (typeof PRESCRIPTION_KINDS)[number]
@@ -85,19 +92,50 @@ export function parsePrescriptionQuery(input: unknown): PrescriptionQuery {
 }
 export function prescriptionText(value: PrescriptionInput): string {
   return [
-    value.name,
-    ...value.items.map((item) =>
-      [item.name, [item.amount, item.unit].filter(Boolean).join(' '), item.usage]
-        .filter(Boolean)
-        .join('  ')
-    ),
+    ...prescriptionItemRows(
+      value.items.map((item) =>
+        [item.name, [item.amount, item.unit].filter(Boolean).join(' '), item.usage]
+          .filter(Boolean)
+          .join('  ')
+      )
+    ).map((row) => row.join(PRESCRIPTION_ITEM_GAP)),
     value.usage && `用法：${value.usage}`,
     value.notes && `备注：${value.notes}`
   ]
     .filter(Boolean)
     .join('\n')
 }
-export function appendPrescription(current: string, prescription: PrescriptionInput): string {
+export function insertPrescription(
+  current: string,
+  prescription: PrescriptionInput,
+  selection: PrescriptionSelection = { start: current.length, end: current.length }
+) {
+  const start = Math.max(0, Math.min(selection.start, selection.end, current.length))
+  const end = Math.max(start, Math.min(Math.max(selection.start, selection.end), current.length))
+  const runs = prescriptionRuns(current).filter((run) => run.kind === 'items')
+  const beforeItems = runs.some((run) => run.start < start && start <= run.end)
+  const afterItems = runs.some((run) => run.start <= end && end < run.end)
+  let before = current.slice(0, start),
+    after = current.slice(end)
+  // 药品段内合并相邻的分隔空白，其他手写段落只补足边界，不删除文字。
+  if (beforeItems) before = before.replace(/\s+$/, '')
+  if (afterItems) after = after.replace(/^\s+/, '')
+  const left = !before
+    ? ''
+    : beforeItems
+      ? PRESCRIPTION_ITEM_GAP
+      : '\n'.repeat(Math.max(0, 2 - (before.match(/\n*$/)?.[0].length || 0)))
+  const right = !after
+    ? ''
+    : afterItems && !prescription.usage && !prescription.notes
+      ? PRESCRIPTION_ITEM_GAP
+      : '\n'.repeat(Math.max(0, 2 - (after.match(/^\n*/)?.[0].length || 0)))
   const addition = prescriptionText(prescription)
-  return text(current + (current ? '\n\n' : '') + addition, '处方内容', 20000, true, true)
+  const position = before.length + left.length + addition.length
+  const result = formatPrescriptionEdit(before + left + addition + right + after, {
+    start: position,
+    end: position
+  })
+  text(result.text, '处方内容', 20000, true, true)
+  return result
 }

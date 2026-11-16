@@ -2,12 +2,15 @@ import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 
+export const CLINICAL_DATABASE_VERSION = 3
+
 export function openClinicalDatabase(directory: string): DatabaseSync {
   mkdirSync(directory, { recursive: true })
   const db = new DatabaseSync(join(directory, 'clinical.sqlite'))
   try {
     const version = Number(db.prepare('PRAGMA user_version').get()?.user_version)
-    if (version > 2) throw new Error('病历数据库版本较新，请使用对应版本的软件')
+    if (version > CLINICAL_DATABASE_VERSION)
+      throw new Error('病历数据库版本较新，请使用对应版本的软件')
     db.exec(
       'PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;'
     )
@@ -60,6 +63,12 @@ export function openClinicalDatabase(directory: string): DatabaseSync {
         CREATE UNIQUE INDEX attachment_checksum ON attachments(visit_id, checksum) WHERE removed = 0;
         CREATE INDEX attachment_visit ON attachments(visit_id, removed, created_at);
         PRAGMA user_version = 2;
+        COMMIT;`)
+    }
+    if (version < 3) {
+      db.exec(`BEGIN IMMEDIATE;
+        CREATE TABLE attachment_cleanup (id TEXT PRIMARY KEY);
+        PRAGMA user_version = 3;
         COMMIT;`)
     }
     return db
